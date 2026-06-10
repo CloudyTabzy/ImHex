@@ -2,7 +2,10 @@
 
 #include <hex.hpp>
 #include <hex/api/imhex_api/hex_editor.hpp>
+#include <hex/api/imhex_api/bookmarks.hpp>
 #include <hex/api/event_manager.hpp>
+
+#include <vector>
 
 /* Forward declarations */
 namespace pl::ptrn { class Pattern; }
@@ -57,6 +60,16 @@ namespace hex {
      * @param id the bookmark's unique ID
      */
     EVENT_DEF(RequestRemoveBookmark, u64);
+
+    /**
+     * @brief Requests a list of all bookmarks of the current provider
+     *
+     * The subscriber (the Bookmarks view) fills the passed vector with a
+     * snapshot of all bookmark entries of the currently selected provider.
+     *
+     * @param entries output vector that gets filled with the bookmark entries
+     */
+    EVENT_DEF(RequestListBookmarks, std::vector<ImHexApi::Bookmarks::Entry>*);
 
     /**
      * @brief Request the Pattern editor to set its code

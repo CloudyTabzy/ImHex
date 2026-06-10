@@ -1,0 +1,64 @@
+{
+    "name": "search_multiple",
+    "title": "Search for Multiple Byte Patterns",
+    "description": "Searches the currently selected data source for up to 20 byte patterns and returns the addresses of all matches per pattern. Useful for finding multiple signatures in one call.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "patterns": {
+                "type": "array",
+                "maxItems": 20,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "pattern": {
+                            "type": "string",
+                            "description": "Pattern to search for"
+                        },
+                        "type": {
+                            "type": "string",
+                            "enum": ["hex", "ascii"],
+                            "default": "hex",
+                            "description": "How to interpret the pattern string"
+                        }
+                    },
+                    "required": ["pattern"]
+                },
+                "description": "Patterns to search for"
+            },
+            "max_results_per_pattern": {
+                "type": "number",
+                "default": 1000,
+                "description": "Maximum number of matches to return per pattern (up to 10000)"
+            }
+        },
+        "required": ["patterns"]
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "handle": {
+                "type": "number",
+                "description": "Handle of the data source that was searched"
+            },
+            "results": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "pattern": { "type": "string" },
+                        "type": { "type": "string" },
+                        "matches": {
+                            "type": "array",
+                            "items": { "type": "number" }
+                        },
+                        "count": { "type": "number" },
+                        "truncated": { "type": "boolean" }
+                    }
+                },
+                "description": "Search results for each pattern"
+            }
+        },
+        "required": ["handle", "results"]
+    }
+}

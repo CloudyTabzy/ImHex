@@ -63,6 +63,15 @@ namespace hex::plugin::builtin {
             });
         });
 
+        // Handle bookmark enumeration requests sent by the API
+        RequestListBookmarks::subscribe(this, [this](std::vector<ImHexApi::Bookmarks::Entry> *entries) {
+            if (entries == nullptr)
+                return;
+
+            for (const auto &bookmark : *m_bookmarks)
+                entries->push_back(bookmark.entry);
+        });
+
         // Draw hex editor background highlights for bookmarks
         ImHexApi::HexEditor::addBackgroundHighlightingProvider([this](u64 address, const u8* data, size_t size, bool) -> std::optional<color_t> {
             std::ignore = data;
@@ -204,6 +213,7 @@ namespace hex::plugin::builtin {
 
     ViewBookmarks::~ViewBookmarks() {
         RequestAddBookmark::unsubscribe(this);
+        RequestListBookmarks::unsubscribe(this);
         EventProviderDeleted::unsubscribe(this);
     }
 

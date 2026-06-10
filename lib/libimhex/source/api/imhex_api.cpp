@@ -292,6 +292,13 @@ namespace hex {
             RequestRemoveBookmark::post(id);
         }
 
+        std::vector<Entry> getEntries() {
+            std::vector<Entry> entries;
+            RequestListBookmarks::post(&entries);
+
+            return entries;
+        }
+
     }
 
 

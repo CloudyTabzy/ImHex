@@ -1,0 +1,33 @@
+{
+    "name": "close_file",
+    "title": "Close Data Source",
+    "description": "Closes an open data source by its handle, discarding any unsaved changes. Use list_open_data_sources to find handles.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "handle": {
+                "type": "number",
+                "description": "Handle of the data source to close"
+            }
+        },
+        "required": ["handle"]
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "handle": {
+                "type": "number",
+                "description": "Handle of the data source that was requested to close"
+            },
+            "closed": {
+                "type": "boolean",
+                "description": "Whether the data source was actually closed"
+            },
+            "message": {
+                "type": "string",
+                "description": "Additional information if the data source could not be closed"
+            }
+        },
+        "required": ["handle", "closed"]
+    }
+}

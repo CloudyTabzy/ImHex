@@ -1,0 +1,52 @@
+{
+    "name": "calculate_hash",
+    "title": "Calculate Hash",
+    "description": "Calculates a hash or checksum over a region of the currently selected data source. The data is read in a streaming fashion, so this also works for very large files.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "algorithm": {
+                "type": "string",
+                "enum": ["crc32", "md5", "sha1", "sha224", "sha256", "sha384", "sha512"],
+                "default": "sha256",
+                "description": "Hash algorithm to use"
+            },
+            "address": {
+                "type": "number",
+                "default": 0,
+                "description": "Address to start hashing from"
+            },
+            "size": {
+                "type": "number",
+                "description": "Number of bytes to hash. Defaults to the rest of the data source"
+            }
+        },
+        "required": []
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "handle": {
+                "type": "number",
+                "description": "Handle of the data source that was hashed"
+            },
+            "algorithm": {
+                "type": "string",
+                "description": "Hash algorithm that was used"
+            },
+            "hash": {
+                "type": "string",
+                "description": "Uppercase hex string of the hash value"
+            },
+            "address": {
+                "type": "number",
+                "description": "Address the hash was calculated from"
+            },
+            "size": {
+                "type": "number",
+                "description": "Number of bytes that were hashed"
+            }
+        },
+        "required": ["handle", "algorithm", "hash", "address", "size"]
+    }
+}

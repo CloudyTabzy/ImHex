@@ -1,0 +1,58 @@
+{
+    "name": "search_bytes",
+    "title": "Search for Byte Pattern",
+    "description": "Searches the currently selected data source for a byte pattern and returns the addresses of all matches. The pattern can be given as a hex string (e.g. 'DEADBEEF') or as an ASCII string.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "pattern": {
+                "type": "string",
+                "description": "Pattern to search for, interpreted according to 'type'"
+            },
+            "type": {
+                "type": "string",
+                "enum": ["hex", "ascii"],
+                "default": "hex",
+                "description": "How to interpret the pattern string"
+            },
+            "start_address": {
+                "type": "number",
+                "default": 0,
+                "description": "Address to start searching from"
+            },
+            "end_address": {
+                "type": "number",
+                "description": "Address to stop searching at. Defaults to the end of the data source"
+            },
+            "max_results": {
+                "type": "number",
+                "default": 1000,
+                "description": "Maximum number of matches to return (up to 10000)"
+            }
+        },
+        "required": ["pattern"]
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "handle": {
+                "type": "number",
+                "description": "Handle of the data source that was searched"
+            },
+            "matches": {
+                "type": "array",
+                "items": { "type": "number" },
+                "description": "Addresses of all matches"
+            },
+            "count": {
+                "type": "number",
+                "description": "Number of matches found"
+            },
+            "truncated": {
+                "type": "boolean",
+                "description": "Whether the search stopped early because max_results was reached"
+            }
+        },
+        "required": ["handle", "matches", "count", "truncated"]
+    }
+}

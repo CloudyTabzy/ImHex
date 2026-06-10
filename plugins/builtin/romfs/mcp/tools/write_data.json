@@ -1,0 +1,43 @@
+{
+    "name": "write_data",
+    "title": "Write Binary Data",
+    "description": "Writes bytes to the currently selected data source at the specified address. The data source must be writable and the write must stay within the current size of the data source. Use this for binary patching.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "address": {
+                "type": "number",
+                "description": "Address to write to in the selected data source"
+            },
+            "data": {
+                "type": "string",
+                "description": "Data to write, encoded according to the 'encoding' parameter"
+            },
+            "encoding": {
+                "type": "string",
+                "enum": ["hex", "base64", "ascii"],
+                "default": "hex",
+                "description": "Encoding of the 'data' parameter"
+            }
+        },
+        "required": ["address", "data"]
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "handle": {
+                "type": "number",
+                "description": "Handle of the data source that was written to"
+            },
+            "address": {
+                "type": "number",
+                "description": "Address the data was written to"
+            },
+            "bytes_written": {
+                "type": "number",
+                "description": "Number of bytes that were written"
+            }
+        },
+        "required": ["handle", "address", "bytes_written"]
+    }
+}

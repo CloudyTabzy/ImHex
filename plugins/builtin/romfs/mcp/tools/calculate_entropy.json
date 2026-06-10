@@ -1,0 +1,59 @@
+{
+    "name": "calculate_entropy",
+    "title": "Calculate Entropy",
+    "description": "Calculates the Shannon entropy (in bits per byte, 0.0 to 8.0) of a region of the currently selected data source, split into fixed-size blocks. High entropy (> 7.5) usually indicates compressed or encrypted data. Returns at most 8192 blocks, increase block_size for large regions.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "address": {
+                "type": "number",
+                "default": 0,
+                "description": "Address to start analyzing from"
+            },
+            "size": {
+                "type": "number",
+                "description": "Number of bytes to analyze. Defaults to the rest of the data source"
+            },
+            "block_size": {
+                "type": "number",
+                "default": 256,
+                "description": "Size of each entropy block in bytes (16 to 1MiB)"
+            }
+        },
+        "required": []
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "handle": {
+                "type": "number",
+                "description": "Handle of the data source that was analyzed"
+            },
+            "block_size": {
+                "type": "number",
+                "description": "Block size that was used"
+            },
+            "overall_entropy": {
+                "type": "number",
+                "description": "Entropy of the entire analyzed region"
+            },
+            "blocks": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "address": { "type": "number" },
+                        "size": { "type": "number" },
+                        "entropy": { "type": "number" }
+                    }
+                },
+                "description": "Per-block entropy values"
+            },
+            "count": {
+                "type": "number",
+                "description": "Number of blocks"
+            }
+        },
+        "required": ["handle", "block_size", "overall_entropy", "blocks", "count"]
+    }
+}

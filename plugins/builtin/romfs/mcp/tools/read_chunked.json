@@ -1,0 +1,74 @@
+{
+    "name": "read_chunked",
+    "title": "Read Binary Data in Chunks",
+    "description": "Reads a region of the currently selected data source in fixed-size chunks for pagination. Call repeatedly with increasing chunk_index until has_more is false to read regions larger than the single-read limit.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "address": {
+                "type": "number",
+                "default": 0,
+                "description": "Start address of the region to read"
+            },
+            "size": {
+                "type": "number",
+                "description": "Total size of the region to read. Defaults to the rest of the data source"
+            },
+            "chunk_size": {
+                "type": "number",
+                "default": 1048576,
+                "description": "Size of each chunk in bytes (4KiB to 16MiB)"
+            },
+            "chunk_index": {
+                "type": "number",
+                "default": 0,
+                "description": "Zero-based index of the chunk to read"
+            },
+            "encoding": {
+                "type": "string",
+                "enum": ["hex", "base64"],
+                "default": "base64",
+                "description": "Encoding of the returned data"
+            }
+        },
+        "required": []
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "handle": {
+                "type": "number",
+                "description": "Handle of the data source the data was read from"
+            },
+            "data": {
+                "type": "string",
+                "description": "Encoded chunk data"
+            },
+            "encoding": {
+                "type": "string",
+                "description": "Encoding of the returned data"
+            },
+            "chunk_address": {
+                "type": "number",
+                "description": "Address of the first byte of this chunk"
+            },
+            "chunk_index": {
+                "type": "number",
+                "description": "Index of the returned chunk"
+            },
+            "chunk_data_size": {
+                "type": "number",
+                "description": "Number of bytes in this chunk"
+            },
+            "total_chunks": {
+                "type": "number",
+                "description": "Total number of chunks in the requested region"
+            },
+            "has_more": {
+                "type": "boolean",
+                "description": "Whether more chunks are available after this one"
+            }
+        },
+        "required": ["handle", "data", "chunk_index", "total_chunks", "has_more"]
+    }
+}

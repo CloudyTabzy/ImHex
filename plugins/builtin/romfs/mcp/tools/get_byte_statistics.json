@@ -1,0 +1,56 @@
+{
+    "name": "get_byte_statistics",
+    "title": "Get Byte Statistics",
+    "description": "Calculates byte-level statistics over a region of the currently selected data source: unique byte count, null byte ratio, printable character ratio, most common byte, entropy and optionally the full 256-entry byte frequency distribution. Good first step when analyzing an unknown binary.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "address": {
+                "type": "number",
+                "default": 0,
+                "description": "Address to start analyzing from"
+            },
+            "size": {
+                "type": "number",
+                "description": "Number of bytes to analyze. Defaults to the rest of the data source"
+            },
+            "include_distribution": {
+                "type": "boolean",
+                "default": false,
+                "description": "Whether to include the full 256-entry byte frequency distribution"
+            }
+        },
+        "required": []
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "handle": { "type": "number" },
+            "address": { "type": "number" },
+            "size": { "type": "number" },
+            "unique_bytes": {
+                "type": "number",
+                "description": "Number of distinct byte values that occur in the region"
+            },
+            "null_bytes": { "type": "number" },
+            "null_percentage": { "type": "number" },
+            "printable_bytes": { "type": "number" },
+            "printable_percentage": { "type": "number" },
+            "most_common_byte": {
+                "type": "number",
+                "description": "Byte value that occurs most often"
+            },
+            "most_common_count": { "type": "number" },
+            "entropy": {
+                "type": "number",
+                "description": "Shannon entropy of the region in bits per byte"
+            },
+            "distribution": {
+                "type": "array",
+                "items": { "type": "number" },
+                "description": "Occurrence count for each byte value 0x00 to 0xFF (only if include_distribution is true)"
+            }
+        },
+        "required": ["handle", "address", "size", "unique_bytes", "entropy"]
+    }
+}

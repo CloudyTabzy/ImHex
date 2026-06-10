@@ -1,0 +1,40 @@
+{
+    "name": "get_provider_info",
+    "title": "Get Data Source Info",
+    "description": "Returns metadata about a data source. If no handle is given, the currently selected data source is used.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "handle": {
+                "type": "number",
+                "description": "Handle of the data source to query. Defaults to the currently selected one"
+            }
+        },
+        "required": []
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "handle": { "type": "number" },
+            "name": { "type": "string" },
+            "type": {
+                "type": "string",
+                "description": "Internal type of the data source"
+            },
+            "size": {
+                "type": "number",
+                "description": "Size of the data source in bytes"
+            },
+            "is_readable": {
+                "type": "boolean",
+                "description": "Whether the data source is currently readable. False while an open is still in progress"
+            },
+            "is_writable": { "type": "boolean" },
+            "is_dirty": {
+                "type": "boolean",
+                "description": "Whether the data source has unsaved changes"
+            }
+        },
+        "required": ["handle", "name", "type", "size", "is_readable", "is_writable", "is_dirty"]
+    }
+}

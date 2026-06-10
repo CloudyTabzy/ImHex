@@ -1,0 +1,39 @@
+{
+    "name": "list_bookmarks",
+    "title": "List Bookmarks",
+    "description": "Lists all bookmarks of the currently selected data source, including their IDs, regions, names and comments.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "handle": {
+                "type": "number",
+                "description": "Handle of the data source the bookmarks belong to"
+            },
+            "bookmarks": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": { "type": "number" },
+                        "address": { "type": "number" },
+                        "size": { "type": "number" },
+                        "name": { "type": "string" },
+                        "comment": { "type": "string" },
+                        "color": { "type": "number" }
+                    }
+                },
+                "description": "All bookmarks of the current data source"
+            },
+            "count": {
+                "type": "number",
+                "description": "Number of bookmarks"
+            }
+        },
+        "required": ["handle", "bookmarks", "count"]
+    }
+}

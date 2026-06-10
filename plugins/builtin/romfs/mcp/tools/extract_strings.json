@@ -1,0 +1,75 @@
+{
+    "name": "extract_strings",
+    "title": "Extract Strings",
+    "description": "Extracts printable strings from the currently selected data source, similar to the 'strings' command line tool. Supports ASCII and UTF-16 little endian (Windows wide) strings.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "min_length": {
+                "type": "number",
+                "default": 4,
+                "description": "Minimum number of characters for a string to be reported"
+            },
+            "max_string_length": {
+                "type": "number",
+                "default": 256,
+                "description": "Maximum length of a single string. Longer runs are split"
+            },
+            "encoding": {
+                "type": "string",
+                "enum": ["ascii", "utf16le"],
+                "default": "ascii",
+                "description": "String encoding to scan for"
+            },
+            "start_address": {
+                "type": "number",
+                "default": 0,
+                "description": "Address to start scanning from"
+            },
+            "end_address": {
+                "type": "number",
+                "description": "Address to stop scanning at. Defaults to the end of the data source"
+            },
+            "max_strings": {
+                "type": "number",
+                "default": 10000,
+                "description": "Maximum number of strings to return (up to 100000)"
+            }
+        },
+        "required": []
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "handle": {
+                "type": "number",
+                "description": "Handle of the data source that was scanned"
+            },
+            "encoding": {
+                "type": "string",
+                "description": "String encoding that was scanned for"
+            },
+            "strings": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "address": { "type": "number" },
+                        "value": { "type": "string" },
+                        "length": { "type": "number" }
+                    }
+                },
+                "description": "Extracted strings with their addresses"
+            },
+            "count": {
+                "type": "number",
+                "description": "Number of strings found"
+            },
+            "truncated": {
+                "type": "boolean",
+                "description": "Whether the scan stopped early because max_strings was reached"
+            }
+        },
+        "required": ["handle", "strings", "count", "truncated"]
+    }
+}

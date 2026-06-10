@@ -1,0 +1,32 @@
+{
+    "name": "detect_file_type",
+    "title": "Detect File Type",
+    "description": "Identifies the type of the currently selected data source based on its magic bytes. Recognizes common executable, archive, image, audio, video, document and database formats.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "handle": {
+                "type": "number",
+                "description": "Handle of the data source that was analyzed"
+            },
+            "file_type": {
+                "type": "string",
+                "description": "Detected file type or 'Unknown'"
+            },
+            "magic_bytes": {
+                "type": "string",
+                "description": "Uppercase hex string of the first bytes of the data source"
+            },
+            "size": {
+                "type": "number",
+                "description": "Size of the data source in bytes"
+            }
+        },
+        "required": ["handle", "file_type", "magic_bytes", "size"]
+    }
+}

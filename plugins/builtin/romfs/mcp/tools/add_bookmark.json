@@ -1,0 +1,43 @@
+{
+    "name": "add_bookmark",
+    "title": "Add Bookmark",
+    "description": "Adds a bookmark to the currently selected data source. Bookmarks are visible in the ImHex GUI and can be used to mark and annotate interesting regions for human review.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "address": {
+                "type": "number",
+                "description": "Start address of the bookmarked region"
+            },
+            "size": {
+                "type": "number",
+                "description": "Size of the bookmarked region in bytes"
+            },
+            "name": {
+                "type": "string",
+                "description": "Name of the bookmark. Defaults to an auto-generated name"
+            },
+            "comment": {
+                "type": "string",
+                "description": "Comment describing the bookmarked region"
+            },
+            "color": {
+                "type": "number",
+                "description": "RGBA color of the bookmark, or 0 for the default color"
+            }
+        },
+        "required": ["address", "size"]
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "id": {
+                "type": "number",
+                "description": "Unique ID of the created bookmark"
+            },
+            "address": { "type": "number" },
+            "size": { "type": "number" }
+        },
+        "required": ["id", "address", "size"]
+    }
+}

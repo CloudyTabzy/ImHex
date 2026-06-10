@@ -18,6 +18,7 @@ namespace hex::init {
 
     int runImHex();
     void runCommandLine(int argc, char **argv);
+    extern bool g_mcpServerMode;
 
 }
 
@@ -50,6 +51,14 @@ int main(int argc, char **argv) {
 
     // Setup messaging system to allow sending commands to the main ImHex instance
     messaging::setupMessaging();
+
+    // Check for MCP server mode before processing other CLI args
+    for (int i = 1; i < argc; i++) {
+        if (std::string_view(argv[i]) == "--mcp-server") {
+            init::g_mcpServerMode = true;
+            break;
+        }
+    }
 
     // Handle command line arguments if any have been passed
     if (argc > 1) {

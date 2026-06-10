@@ -3,6 +3,7 @@
 #include <hex.hpp>
 
 #include <string>
+#include <vector>
 
 EXPORT_MODULE namespace hex {
 
@@ -45,6 +46,12 @@ EXPORT_MODULE namespace hex {
         * @param id The ID of the bookmark to remove
         */
         void remove(u64 id);
+
+        /**
+        * @brief Gets a snapshot of all bookmarks of the currently selected provider
+        * @return All bookmark entries of the current provider
+        */
+        std::vector<Entry> getEntries();
 
     }
 

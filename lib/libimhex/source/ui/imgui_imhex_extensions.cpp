@@ -685,21 +685,25 @@ namespace ImGuiExt {
     }
 
     ImU32 GetCustomColorU32(ImGuiCustomCol idx, float alpha_mul) {
-        auto &customData = *static_cast<ImHexCustomData *>(GImGui->IO.UserData);
-        ImVec4 c         = customData.Colors[idx];
-        c.w *= GImGui->Style.Alpha * alpha_mul;
-        return ColorConvertFloat4ToU32(c);
+        return ColorConvertFloat4ToU32(GetCustomColorVec4(idx, alpha_mul));
     }
 
     ImVec4 GetCustomColorVec4(ImGuiCustomCol idx, float alpha_mul) {
-        auto &customData = *static_cast<ImHexCustomData *>(GImGui->IO.UserData);
-        ImVec4 c         = customData.Colors[idx];
+        const auto *customData = static_cast<ImHexCustomData *>(GImGui->IO.UserData);
+        if (customData == nullptr)
+            return {};
+
+        ImVec4 c = customData->Colors[idx];
         c.w *= GImGui->Style.Alpha * alpha_mul;
         return c;
     }
 
     float GetCustomStyleFloat(ImGuiCustomStyle idx) {
-        auto &customData = *static_cast<ImHexCustomData *>(GImGui->IO.UserData);
+        const auto *customDataPtr = static_cast<ImHexCustomData *>(GImGui->IO.UserData);
+        if (customDataPtr == nullptr)
+            return 0.0F;
+
+        const auto &customData = *customDataPtr;
 
         switch (idx) {
             case ImGuiCustomStyle_WindowBlur:
@@ -715,7 +719,11 @@ namespace ImGuiExt {
     }
 
     void StyleCustomColorsDark() {
-        auto &colors = static_cast<ImHexCustomData *>(GImGui->IO.UserData)->Colors;
+        auto *customData = static_cast<ImHexCustomData *>(GImGui->IO.UserData);
+        if (customData == nullptr)
+            return;
+
+        auto &colors = customData->Colors;
 
         colors[ImGuiCustomCol_DescButton]        = ImColor(20, 20, 20);
         colors[ImGuiCustomCol_DescButtonHovered] = ImColor(40, 40, 40);
@@ -737,7 +745,11 @@ namespace ImGuiExt {
     }
 
     void StyleCustomColorsLight() {
-        auto &colors = static_cast<ImHexCustomData *>(GImGui->IO.UserData)->Colors;
+        auto *customData = static_cast<ImHexCustomData *>(GImGui->IO.UserData);
+        if (customData == nullptr)
+            return;
+
+        auto &colors = customData->Colors;
 
         colors[ImGuiCustomCol_DescButton]        = ImColor(230, 230, 230);
         colors[ImGuiCustomCol_DescButtonHovered] = ImColor(210, 210, 210);
@@ -759,7 +771,11 @@ namespace ImGuiExt {
     }
 
     void StyleCustomColorsClassic() {
-        auto &colors = static_cast<ImHexCustomData *>(GImGui->IO.UserData)->Colors;
+        auto *customData = static_cast<ImHexCustomData *>(GImGui->IO.UserData);
+        if (customData == nullptr)
+            return;
+
+        auto &colors = customData->Colors;
 
         colors[ImGuiCustomCol_DescButton]        = ImColor(40, 40, 80);
         colors[ImGuiCustomCol_DescButtonHovered] = ImColor(60, 60, 100);

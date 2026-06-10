@@ -1,0 +1,29 @@
+{
+    "name": "remove_bookmark",
+    "title": "Remove Bookmark",
+    "description": "Removes a bookmark from the currently selected data source by its ID. Use list_bookmarks to find bookmark IDs.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "id": {
+                "type": "number",
+                "description": "ID of the bookmark to remove"
+            }
+        },
+        "required": ["id"]
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "id": {
+                "type": "number",
+                "description": "ID of the bookmark that was removed"
+            },
+            "removed": {
+                "type": "boolean",
+                "description": "Whether the bookmark was removed"
+            }
+        },
+        "required": ["id", "removed"]
+    }
+}
