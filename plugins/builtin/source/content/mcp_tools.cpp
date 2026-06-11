@@ -1498,7 +1498,7 @@ namespace hex::plugin::builtin {
         });
 
         // -----------------------------------------------------------------
-        // Phase 3 tools (breadth & ergonomics + first 3 from Phase 4)
+        // Advanced native tools (breadth & ergonomics + highlighting)
         // -----------------------------------------------------------------
 
         // 1) calculate_hash (extended) - registry-backed, 30+ algorithms
