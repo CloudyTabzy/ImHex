@@ -1,0 +1,31 @@
+{
+    "name": "compare_regions",
+    "description": "Read two regions from the selected data source and compare them byte-by-byte. Returns similarity percentage, matching/differing byte counts, SHA256 of each region, and the first N differing offsets. Useful for finding embedded duplicates (version strings, repeated configs), detecting code reuse, or checking if a region was patched. For diffing two separate files, use diff_data_sources instead.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "address_a": {
+                "type": "integer",
+                "description": "Start address of the first region"
+            },
+            "size_a": {
+                "type": "integer",
+                "description": "Size of the first region in bytes (clamped to data source size)"
+            },
+            "address_b": {
+                "type": "integer",
+                "description": "Start address of the second region"
+            },
+            "size_b": {
+                "type": "integer",
+                "description": "Size of the second region in bytes (clamped to data source size)"
+            },
+            "max_diff_regions": {
+                "type": "integer",
+                "description": "Maximum number of differing offsets to return (1-10000)",
+                "default": 100
+            }
+        },
+        "required": ["address_a", "size_a", "address_b", "size_b"]
+    }
+}

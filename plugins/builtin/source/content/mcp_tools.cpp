@@ -2363,6 +2363,81 @@ namespace hex::plugin::builtin {
             };
             return makeResult(result);
         });
+
+        // 12) compare_regions — read two regions from the same provider and compare them.
+        //     Useful for finding embedded duplicates (version strings, repeated configs),
+        //     detecting code reuse within a single binary, or checking if a region was
+        //     patched. Returns byte-level diff statistics + SHA256 of each region +
+        //     first N differing offsets. [R] (pure read, safe on MCP thread).
+        ContentRegistry::MCP::registerTool(romfs::get("mcp/tools/compare_regions.json").string(), [](const nlohmann::json &data) -> nlohmann::json {
+            auto provider = getActiveProvider();
+
+            const auto addressA = data.at("address_a").get<u64>();
+            const auto addressB = data.at("address_b").get<u64>();
+            const auto sizeA    = clampRegion(provider, addressA, data.at("size_a").get<u64>());
+            const auto sizeB    = clampRegion(provider, addressB, data.at("size_b").get<u64>());
+            const auto maxDiffs = std::clamp<u64>(data.value("max_diff_regions", u64(100)), 1, u64(10000));
+
+            // Read both regions
+            std::vector<u8> bufferA(sizeA);
+            std::vector<u8> bufferB(sizeB);
+            if (sizeA > 0) provider->read(addressA, bufferA.data(), sizeA);
+            if (sizeB > 0) provider->read(addressB, bufferB.data(), sizeB);
+
+            // Byte-level comparison over the overlapping range
+            const auto compareSize = std::min(sizeA, sizeB);
+            u64 matchingBytes = 0;
+            u64 differingBytes = 0;
+            nlohmann::json diffOffsets = nlohmann::json::array();
+
+            for (u64 i = 0; i < compareSize; i++) {
+                if (bufferA[i] == bufferB[i]) {
+                    matchingBytes++;
+                } else {
+                    differingBytes++;
+                    if (diffOffsets.size() < maxDiffs) {
+                        diffOffsets.push_back({
+                            { "offset_a", addressA + i },
+                            { "offset_b", addressB + i },
+                            { "byte_a", crypt::encode16({ bufferA[i] }) },
+                            { "byte_b", crypt::encode16({ bufferB[i] }) }
+                        });
+                    }
+                }
+            }
+
+            // Size difference (the non-overlapping tail)
+            const u64 sizeDelta = (sizeA > sizeB) ? (sizeA - sizeB) : (sizeB - sizeA);
+
+            // Similarity: matching / max(sizeA, sizeB). If both empty, 100%.
+            const double similarity = (std::max(sizeA, sizeB) == 0)
+                ? 100.0
+                : (double(matchingBytes) / double(std::max(sizeA, sizeB))) * 100.0;
+
+            // SHA256 of each region for quick identification
+            const auto hashA = (sizeA > 0) ? crypt::sha256(bufferA) : std::vector<u8>{};
+            const auto hashB = (sizeB > 0) ? crypt::sha256(bufferB) : std::vector<u8>{};
+            const auto toHex = [](const std::vector<u8> &v) { return crypt::encode16(v); };
+
+            nlohmann::json result = {
+                { "handle", provider->getID() },
+                { "address_a", addressA },
+                { "size_a", sizeA },
+                { "hash_a", toHex(hashA) },
+                { "address_b", addressB },
+                { "size_b", sizeB },
+                { "hash_b", toHex(hashB) },
+                { "compare_size", compareSize },
+                { "matching_bytes", matchingBytes },
+                { "differing_bytes", differingBytes },
+                { "size_delta", sizeDelta },
+                { "similarity_percent", round(similarity * 100.0) / 100.0 },
+                { "identical", (sizeA == sizeB && differingBytes == 0) },
+                { "diff_regions_truncated", differingBytes > diffOffsets.size() },
+                { "diff_regions", diffOffsets }
+            };
+            return makeResult(result);
+        });
     }
 
 }
