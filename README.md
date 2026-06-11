@@ -309,6 +309,147 @@ Would you like to appear here as well? Contact us at [imhex@werwolv.net](mailto:
   - Interactive tutorials
 </details>
 
+## AI Agent & MCP Support
+
+This fork transforms ImHex into a first-class binary reverse-engineering platform for AI agents via the **Model Context Protocol (MCP)**. Launch ImHex in headless mode and any MCP-compatible client (OpenCode, Claude Desktop, Cursor, etc.) can drive the full analysis toolchain.
+
+```bash
+# Launch ImHex as a headless MCP server (no GPU/GLFW required)
+imhex-gui.exe --mcp-server
+# Listens on TCP port 19743, JSON-RPC 2.0, protocol 2025-06-18
+```
+
+### What Makes This Fork Different for Agents
+
+| Capability | Standard ImHex | This Fork |
+|---|---|---|
+| Native MCP server | ❌ | ✅ 49 tools |
+| Headless mode (no GPU) | ❌ | ✅ `--mcp-server` |
+| libmagic in headless | ❌ | ✅ Compiles .mgc at startup |
+| Pattern Language over MCP | ❌ | ✅ `run_pattern_file` |
+| Capstone disassembly | ❌ | ✅ 20+ archs via MCP |
+| YARA scanning | ❌ | ✅ `yara_scan` |
+| Data Inspector | ❌ | ✅ 21 typed interpretations |
+| Hash registry | ❌ | ✅ 73 algorithms |
+| Hex editor annotations | ❌ | ✅ Highlights/tooltips via MCP |
+
+### 49 Native MCP Tools Across 12 Categories
+
+**File & Provider Operations**
+- `open_file`, `close_file`, `list_open_data_sources`, `select_data_source`, `get_provider_info`
+- `open_memory` — load agent-supplied hex/base64 bytes for in-memory analysis
+- `read_data`, `read_chunked` (paginated, 16 MiB chunks), `write_data`
+- `create_view` — read-only sub-range isolation for safe inspection
+
+**Search & Pattern Matching**
+- `search_bytes`, `search_multiple` — Boyer-Moore-Horspool, cross-boundary safe
+- `search_value` — numeric value scan (8/16/32/64-bit, little/big endian, signed/unsigned)
+- `extract_strings` — ASCII + UTF-16LE, configurable min/max length
+
+**Hashing & Integrity**
+- `calculate_hash` — 73 algorithms via ContentRegistry::Hashes (Blake2, XXHash, Murmur, SipHash, Tiger, CRC family, etc.)
+- `list_hash_algorithms` — enumerate all registered hashes with friendly ids
+- `demangle_symbol` — Itanium/MSVC/Rust/D via LLVM trace::demangle
+
+**Analysis & Statistics**
+- `calculate_entropy` — exact Shannon entropy (no quantized lookup errors)
+- `get_byte_statistics` — frequency, uniqueness, printable/null ratios
+- `detect_file_type` — 40+ magic signatures (also backed by libmagic)
+- `data_info` — composite report (libmagic + entropy + stats + header interpretations)
+- `func_profile` — heuristic code region analysis (instructions, basic blocks, calls, returns, entry points)
+
+**File Type Identification**
+- `identify_file` — real libmagic (description/MIME/extensions)
+- `suggest_patterns` — find matching `.hexpat` files for the open binary
+- `auto_analyze` — one-shot identify → suggest → run best pattern → parsed field tree
+
+**Pattern Language**
+- `execute_pattern_code`, `get_pattern_console_content`, `get_patterns`
+- `run_pattern_file` — inline source or `.hexpat` path; returns parsed field tree as JSON + in/out variables + compile/eval errors with line/column
+
+**Disassembly**
+- `disassemble` — Capstone, 20+ architectures (x86, ARM, MIPS, PowerPC, RISC-V, WebAssembly, etc.)
+- `list_architectures` — supported ISAs with spec vocabulary
+
+**YARA**
+- `yara_scan` — inline rule or `.yar` path; tags, metadata, per-string match regions
+
+**Comparison**
+- `diff_data_sources` — structural diff (Simple + Myers) via Diffing registry
+- `copy_bytes_as` — format region as C/C++/Rust/Python/Java/Go/JS/Swift/Pascal array
+
+**Bookmarks & Annotations**
+- `add_bookmark`, `remove_bookmark`, `list_bookmarks`, `update_bookmark`
+- `add_highlight`, `remove_highlight`, `list_highlights` — color-coded regions in hex editor
+- `add_tooltip`, `remove_tooltip` — hover annotations
+- `set_selection`, `get_selection` — hex editor cursor control
+- `generate_report` — aggregated markdown report from all registered Reports generators
+
+**Utilities**
+- `fill_range` — fill a range with a single byte or repeating pattern
+- `export_region` — export a byte range to a file on disk
+
+### Hybrid Mode: Works With or Without ImHex
+
+The companion Python bridge ([imhex-mcp-bridge](../imhex-mcp-bridge)) provides a stdio MCP interface for AI clients. It auto-detects ImHex and falls back to 21 pure-Python tools when ImHex is offline — so agents always have a working toolchain.
+
+**Bridge features:**
+- **49 native tools** proxied through TCP to ImHex when running
+- **21 Python fallback tools** when ImHex is offline (`bytes_read`, `bytes_hash`, `bytes_entropy`, `pe_info`, `elf_info`, etc.)
+- **Lazy mode** — 12 meta-tools reduce initial context by ~86%
+- **TOON encoding** — 30-60% token reduction on heavy tool outputs
+- **JSON repair** — robust parsing of LLM-emitted JSON with `json_repair` fallback
+- **Session tracking** — manage multiple open files with context isolation
+- **Session persistence** — `.mxsproj` save/load for resumable RE sessions
+
+### Quick Example: Agent Analyzing a PE File
+
+```python
+# Agent discovers tools (lazy mode)
+list_modules()  # → file, bytes, analysis, pattern, disassembly, ...
+
+# Open and analyze in one shot
+auto_analyze()  # → libmagic says "MS-DOS PE", runs dos.hexpat, returns 56 fields
+
+# Disassemble the entry point
+disassemble(architecture="x64", address=0x1000, size=256)
+
+# Search for suspicious strings
+extract_strings(min_length=8, encoding="ascii")
+
+# Annotate findings for the human reviewer
+add_bookmark(address=0x401000, size=16, name="suspicious_call", color=0xFF0000FF)
+add_highlight(address=0x401000, size=16, color=0xFF0000FF, type="background")
+add_tooltip(address=0x401000, size=16, text="Indirect call to API — investigate")
+```
+
+### Thread Safety
+
+All tools that mutate GUI state (bookmarks, highlights, tooltips, providers) marshal to the main thread via `TaskManager::doLater()` + `std::promise/future`. Pure-read tools execute directly on the MCP thread. The C++ side uses a 10s marshaling timeout for `[M]` tools; long-running `[L]` tools (diffing, pattern eval) use `TaskManager::createTask` with extended budgets.
+
+### Building the Headless Server
+
+```powershell
+# MSVC (Windows)
+$env:VCPKG_ROOT = "C:\vcpkg"
+cmake --preset vs2022
+cmake --build build/vs2022 --target imhex_all
+
+# Launch headless
+.\build\vs2022\imhex-gui.exe --mcp-server
+```
+
+The companion Python bridge runs separately:
+```bash
+cd ../imhex-mcp-bridge
+pip install -e .
+python -m imhex_mcp_bridge  # stdio MCP for OpenCode/Claude/Cursor
+```
+
+### Configuration
+
+MCP clients connect to the bridge via stdio. See [`opencode_mcp_setup.md`](../Docs/opencode_mcp_setup.md) for OpenCode/Claude Desktop/Cursor configuration examples.
+
 ## Pattern Language
 
 The Pattern Language is the completely custom programming language developed for ImHex.
