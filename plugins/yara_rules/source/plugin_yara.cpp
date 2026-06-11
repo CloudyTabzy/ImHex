@@ -13,6 +13,7 @@ using namespace hex::plugin::yara;
 namespace hex::plugin::yara {
 
     void registerDataInformationSections();
+    void registerYaraMCPTools();
     void registerViews() {
         ContentRegistry::Views::add<ViewYara>();
     }
@@ -27,4 +28,5 @@ IMHEX_PLUGIN_SETUP("Yara Rules", "WerWolv", "Support for matching Yara rules") {
 
     registerViews();
     registerDataInformationSections();
+    registerYaraMCPTools();
 }

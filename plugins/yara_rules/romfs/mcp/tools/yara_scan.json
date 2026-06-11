@@ -1,0 +1,59 @@
+{
+    "name": "yara_scan",
+    "title": "Scan with YARA Rule",
+    "description": "Scans the currently selected data source with a YARA rule and returns the matched rules, including their tags, metadata, and the address/size of every string match. Provide exactly one of 'rule' (inline YARA rule text) or 'rule_path' (a .yar file).",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "rule": {
+                "type": "string",
+                "description": "Inline YARA rule source text"
+            },
+            "rule_path": {
+                "type": "string",
+                "description": "Path to a .yar rule file (alternative to rule)"
+            },
+            "address": {
+                "type": "number",
+                "description": "Start address of the region to scan. Defaults to the whole data source"
+            },
+            "size": {
+                "type": "number",
+                "description": "Number of bytes to scan. Defaults to the rest of the data source"
+            }
+        },
+        "required": []
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "handle": { "type": "number" },
+            "matched_rules": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "identifier": { "type": "string" },
+                        "tags": { "type": "array", "items": { "type": "string" } },
+                        "metadata": { "type": "object" },
+                        "matches": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "variable": { "type": "string" },
+                                    "address": { "type": "number" },
+                                    "size": { "type": "number" }
+                                }
+                            }
+                        },
+                        "match_count": { "type": "number" }
+                    }
+                }
+            },
+            "rule_count": { "type": "number" },
+            "console": { "type": "string" }
+        },
+        "required": ["handle", "matched_rules", "rule_count"]
+    }
+}

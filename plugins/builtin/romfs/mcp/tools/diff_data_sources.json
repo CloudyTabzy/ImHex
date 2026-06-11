@@ -1,0 +1,53 @@
+{
+    "name": "diff_data_sources",
+    "title": "Diff Two Data Sources",
+    "description": "Compares two open data sources and returns the differing regions, using ImHex's structural diffing algorithms (insert/delete-aware Myers, or a fast byte-level Simple diff). Use list_open_data_sources to get handles. Returns differences from each side's perspective.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "handle_a": { "type": "number", "description": "Handle of the first data source" },
+            "handle_b": { "type": "number", "description": "Handle of the second data source" },
+            "algorithm": {
+                "type": "string",
+                "description": "Substring of the diffing algorithm name to use (e.g. 'myers' or 'simple'). Defaults to the first registered algorithm"
+            },
+            "max_regions": {
+                "type": "number",
+                "default": 1000,
+                "description": "Maximum number of difference regions to return per side (up to 100000)"
+            }
+        },
+        "required": ["handle_a", "handle_b"]
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "handle_a": { "type": "number" },
+            "handle_b": { "type": "number" },
+            "algorithm": { "type": "string" },
+            "size_a": { "type": "number" },
+            "size_b": { "type": "number" },
+            "differences_a": {
+                "type": "array",
+                "description": "Differing regions from the first source's perspective",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "start": { "type": "number" },
+                        "end": { "type": "number" },
+                        "size": { "type": "number" },
+                        "type": { "type": "string", "description": "match / insertion / deletion / mismatch" }
+                    }
+                }
+            },
+            "differences_b": {
+                "type": "array",
+                "description": "Differing regions from the second source's perspective",
+                "items": { "type": "object" }
+            },
+            "difference_count": { "type": "number" },
+            "truncated": { "type": "boolean" }
+        },
+        "required": ["handle_a", "handle_b", "algorithm", "size_a", "size_b"]
+    }
+}

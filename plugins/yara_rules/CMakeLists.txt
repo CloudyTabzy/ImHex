@@ -21,6 +21,7 @@ add_imhex_plugin(
         source/content/yara_rule.cpp
         source/content/data_information_sections.cpp
         source/content/views/view_yara.cpp
+        source/content/mcp_tools.cpp
     INCLUDES
         include
         ${YARA_INCLUDE_DIRS}

@@ -5,8 +5,12 @@
     #include <hex/api/content_registry/communication_interface.hpp>
     #include <hex/api/task_manager.hpp>
     #include <hex/helpers/logger.hpp>
+    #include <hex/helpers/magic.hpp>
+    #include <hex/helpers/utils.hpp>
+    #include <hex/helpers/default_paths.hpp>
     #include <hex/ui/imgui_imhex_extensions.h>
     #include <wolv/utils/guards.hpp>
+    #include <wolv/utils/string.hpp>
 
     #include <init/run.hpp>
     #include <init/tasks.hpp>
@@ -14,11 +18,75 @@
 
     #include <GLFW/glfw3.h>
 
+    #include <filesystem>
     #include <thread>
 
     namespace hex::init {
 
         bool g_mcpServerMode = false;
+
+        namespace {
+
+            // Honor IMHEX_CONTENT_DIR so a headless deployment can point ImHex at a bundled
+            // content directory (magic db, pattern std-library, patterns) without relying on
+            // the per-user data folder. Multiple paths may be separated by the OS path
+            // separator (';' on Windows, ':' elsewhere). Must run before the init tasks so
+            // the directories are part of the data-path search from the start.
+            void applyContentDirOverride() {
+                auto value = hex::getEnvironmentVariable("IMHEX_CONTENT_DIR");
+                if (!value.has_value() || value->empty())
+                    return;
+
+                #if defined(OS_WINDOWS)
+                    constexpr char Separator = ';';
+                #else
+                    constexpr char Separator = ':';
+                #endif
+
+                std::vector<std::fs::path> paths = ImHexApi::System::getAdditionalFolderPaths();
+                for (const auto &part : wolv::util::splitString(*value, std::string(1, Separator))) {
+                    auto trimmed = wolv::util::trim(part);
+                    if (trimmed.empty())
+                        continue;
+
+                    std::error_code error;
+                    if (std::fs::exists(trimmed, error)) {
+                        log::info("Adding content directory from IMHEX_CONTENT_DIR: {}", trimmed);
+                        paths.emplace_back(trimmed);
+                    } else {
+                        log::warn("IMHEX_CONTENT_DIR entry does not exist, ignoring: {}", trimmed);
+                    }
+                }
+
+                ImHexApi::System::setAdditionalFolderPaths(paths);
+            }
+
+            // The magic database ships as source files; the GUI compiles them to .mgc lazily
+            // when a view needs them. Headless mode never triggers that, so identify_file /
+            // suggest_patterns would see no magic db. Compile it once up front (best-effort).
+            void compileMagicDatabase() {
+                bool hasMagicFiles = false;
+                std::error_code error;
+                for (const auto &dir : paths::Magic.read()) {
+                    if (std::fs::exists(dir, error) && !std::fs::is_empty(dir, error)) {
+                        hasMagicFiles = true;
+                        break;
+                    }
+                }
+
+                if (!hasMagicFiles) {
+                    log::info("No magic database files found; identify_file will use the built-in signature table. "
+                              "Provision ImHex content or set IMHEX_CONTENT_DIR to enable libmagic.");
+                    return;
+                }
+
+                if (magic::compile())
+                    log::info("Magic database compiled successfully");
+                else
+                    log::warn("Failed to compile the magic database; identify_file will fall back to signatures");
+            }
+
+        }
 
         int runImHex() {
             // MCP Server headless mode - no GUI, just TCP server
@@ -35,6 +103,9 @@
                 static ImGuiExt::ImHexCustomData s_imguiCustomData;
                 ImGui::GetIO().UserData = &s_imguiCustomData;
 
+                // Pick up any externally provided content directory before paths are resolved
+                applyContentDirOverride();
+
                 // Run init tasks directly without splash window
                 for (const auto &[name, task, async, running] : init::getInitTasks()) {
                     log::info("Running init task: {}", name);
@@ -44,6 +115,9 @@
                         return EXIT_FAILURE;
                     }
                 }
+
+                // Build the magic database so libmagic-backed tools work headlessly
+                compileMagicDatabase();
 
                 // Enable the MCP server
                 ContentRegistry::MCP::impl::setEnabled(true);

@@ -1,6 +1,8 @@
 #include <content/providers/file_provider.hpp>
+#include <content/providers/memory_file_provider.hpp>
 #include <hex/api/content_registry/communication_interface.hpp>
 #include <hex/api/content_registry/pattern_language.hpp>
+#include <hex/api/content_registry/diffing.hpp>
 #include <hex/api/imhex_api/provider.hpp>
 #include <hex/api/imhex_api/bookmarks.hpp>
 #include <hex/api/task_manager.hpp>
@@ -511,6 +513,118 @@ namespace hex::plugin::builtin {
             }
 
             return result;
+        }
+
+        // ============================================================================
+        // PATTERN EXECUTION (shared by run_pattern_file and auto_analyze)
+        // ============================================================================
+
+        /**
+         * @brief Runs a pattern on the current provider's runtime and collects the result.
+         * @note The caller MUST hold ContentRegistry::PatternLanguage::getRuntimeLock().
+         */
+        nlohmann::json executePattern(prv::Provider *provider, const std::string &source,
+                                      const std::string &sourceName,
+                                      const std::map<std::string, pl::core::Token::Literal> &inVariables,
+                                      bool includePatterns) {
+            auto &runtime = ContentRegistry::PatternLanguage::getRuntime();
+            ContentRegistry::PatternLanguage::configureRuntime(runtime, provider);
+
+            std::vector<std::string> consoleLines;
+            runtime.setLogCallback([&consoleLines](pl::core::LogConsole::Level level, const std::string &message) {
+                const char *prefix = "";
+                switch (level) {
+                    using enum pl::core::LogConsole::Level;
+                    case Debug:   prefix = "[D] "; break;
+                    case Info:    prefix = "[I] "; break;
+                    case Warning: prefix = "[W] "; break;
+                    case Error:   prefix = "[E] "; break;
+                    default: break;
+                }
+                consoleLines.push_back(prefix + message);
+            });
+
+            std::ignore = runtime.executeString(source, sourceName, {}, inVariables, true);
+            runtime.setLogCallback({});
+
+            const auto &compileErrors = runtime.getCompileErrors();
+            const auto &evalError     = runtime.getEvalError();
+            const bool success = compileErrors.empty() && !evalError.has_value();
+
+            nlohmann::json compileErrorsJson = nlohmann::json::array();
+            for (const auto &error : compileErrors)
+                compileErrorsJson.push_back(compileErrorToJson(error));
+
+            nlohmann::json evalErrorJson = nullptr;
+            if (evalError.has_value())
+                evalErrorJson = { { "message", evalError->message }, { "line", evalError->line }, { "column", evalError->column } };
+
+            nlohmann::json outVariables = nlohmann::json::object();
+            for (const auto &[name, value] : runtime.getOutVariables())
+                outVariables[name] = literalToJson(value);
+
+            nlohmann::json result = {
+                { "success", success },
+                { "pattern_count", runtime.getCreatedPatternCount() },
+                { "compile_errors", compileErrorsJson },
+                { "eval_error", evalErrorJson },
+                { "out_variables", outVariables },
+                { "console", wolv::util::combineStrings(consoleLines, "\n") }
+            };
+
+            if (includePatterns && success) {
+                pl::gen::fmt::FormatterJson formatter;
+                auto formatted = formatter.format(runtime);
+                try {
+                    result["patterns"] = nlohmann::json::parse(std::string(formatted.begin(), formatted.end()));
+                } catch (const nlohmann::json::exception &) {
+                    result["patterns"] = nlohmann::json::array();
+                }
+            }
+
+            return result;
+        }
+
+        // ============================================================================
+        // DIFFING HELPERS
+        // ============================================================================
+
+        const char* differenceTypeName(ContentRegistry::Diffing::DifferenceType type) {
+            using enum ContentRegistry::Diffing::DifferenceType;
+            switch (type) {
+                case Match:     return "match";
+                case Insertion: return "insertion";
+                case Deletion:  return "deletion";
+                case Mismatch:  return "mismatch";
+            }
+            return "unknown";
+        }
+
+        /**
+         * @brief Serializes a diff interval tree into a JSON array of {start,end,size,type} regions,
+         *        skipping plain matches (only differences are reported).
+         */
+        nlohmann::json diffTreeToJson(const ContentRegistry::Diffing::DiffTree &tree, size_t maxRegions, bool &truncated) {
+            nlohmann::json regions = nlohmann::json::array();
+            for (const auto &[start, data] : tree) {
+                const auto end = data.first;
+                const auto type = data.second;
+                if (type == ContentRegistry::Diffing::DifferenceType::Match)
+                    continue;
+
+                if (regions.size() >= maxRegions) {
+                    truncated = true;
+                    break;
+                }
+
+                regions.push_back({
+                    { "start", start },
+                    { "end", end },
+                    { "size", (end >= start) ? (end - start + 1) : 0 },
+                    { "type", differenceTypeName(type) }
+                });
+            }
+            return regions;
         }
 
     }
@@ -1190,66 +1304,9 @@ namespace hex::plugin::builtin {
 
             const bool includePatterns = data.value("include_patterns", true);
 
-            auto &runtime = ContentRegistry::PatternLanguage::getRuntime();
             auto lock = std::scoped_lock(ContentRegistry::PatternLanguage::getRuntimeLock());
-
-            // Reset and bind the runtime to the current provider, then execute
-            ContentRegistry::PatternLanguage::configureRuntime(runtime, provider);
-
-            std::vector<std::string> consoleLines;
-            runtime.setLogCallback([&consoleLines](pl::core::LogConsole::Level level, const std::string &message) {
-                const char *prefix = "";
-                switch (level) {
-                    using enum pl::core::LogConsole::Level;
-                    case Debug:   prefix = "[D] "; break;
-                    case Info:    prefix = "[I] "; break;
-                    case Warning: prefix = "[W] "; break;
-                    case Error:   prefix = "[E] "; break;
-                    default: break;
-                }
-                consoleLines.push_back(prefix + message);
-            });
-
-            std::ignore = runtime.executeString(source, sourceName, {}, inVariables, true);
-
-            // Detach the callback so the runtime never references our local vector after this call
-            runtime.setLogCallback({});
-
-            const auto &compileErrors = runtime.getCompileErrors();
-            const auto &evalError     = runtime.getEvalError();
-            const bool success = compileErrors.empty() && !evalError.has_value();
-
-            nlohmann::json compileErrorsJson = nlohmann::json::array();
-            for (const auto &error : compileErrors)
-                compileErrorsJson.push_back(compileErrorToJson(error));
-
-            nlohmann::json evalErrorJson = nullptr;
-            if (evalError.has_value())
-                evalErrorJson = { { "message", evalError->message }, { "line", evalError->line }, { "column", evalError->column } };
-
-            nlohmann::json outVariables = nlohmann::json::object();
-            for (const auto &[name, value] : runtime.getOutVariables())
-                outVariables[name] = literalToJson(value);
-
-            nlohmann::json result = {
-                { "handle", provider->getID() },
-                { "success", success },
-                { "pattern_count", runtime.getCreatedPatternCount() },
-                { "compile_errors", compileErrorsJson },
-                { "eval_error", evalErrorJson },
-                { "out_variables", outVariables },
-                { "console", wolv::util::combineStrings(consoleLines, "\n") }
-            };
-
-            if (includePatterns && success) {
-                pl::gen::fmt::FormatterJson formatter;
-                auto formatted = formatter.format(runtime);
-                try {
-                    result["patterns"] = nlohmann::json::parse(std::string(formatted.begin(), formatted.end()));
-                } catch (const nlohmann::json::exception &) {
-                    result["patterns"] = nlohmann::json::array();
-                }
-            }
+            nlohmann::json result = executePattern(provider, source, sourceName, inVariables, includePatterns);
+            result["handle"] = provider->getID();
 
             return makeResult(result);
         });
@@ -1287,6 +1344,150 @@ namespace hex::plugin::builtin {
                 { "bytes_read", available },
                 { "interpretations", interpretations }
             };
+            return makeResult(result);
+        });
+
+        // ====================================================================
+        // PHASE 2 — end-to-end workflows
+        // ====================================================================
+
+        ContentRegistry::MCP::registerTool(romfs::get("mcp/tools/auto_analyze.json").string(), [](const nlohmann::json &data) -> nlohmann::json {
+            auto provider = getActiveProvider();
+
+            // 1. Identify
+            nlohmann::json identification = {
+                { "description", magic::getDescription(provider) },
+                { "mime_type", magic::getMIMEType(provider) },
+                { "signature_match", [&] {
+                    std::vector<u8> header(std::min<u64>(provider->getActualSize(), 32));
+                    if (!header.empty()) provider->read(0, header.data(), header.size());
+                    return detectFileType(provider, header);
+                }() }
+            };
+
+            // 2. Suggest matching pattern files
+            const auto viablePatterns = magic::findViablePatterns(provider);
+            nlohmann::json suggested = nlohmann::json::array();
+            for (const auto &found : viablePatterns)
+                suggested.push_back({
+                    { "path", wolv::util::toUTF8String(found.patternFilePath) },
+                    { "description", found.description }
+                });
+
+            nlohmann::json result = {
+                { "handle", provider->getID() },
+                { "size", provider->getActualSize() },
+                { "identification", identification },
+                { "suggested_patterns", suggested },
+                { "suggested_count", suggested.size() }
+            };
+
+            // 3. Run the best matching pattern, if any
+            const bool includePatterns = data.value("include_patterns", true);
+            if (!viablePatterns.empty()) {
+                const auto &best = viablePatterns.front();
+                wolv::io::File file(best.patternFilePath, wolv::io::File::Mode::Read);
+                if (file.isValid()) {
+                    auto source = file.readString();
+                    auto sourceName = wolv::util::toUTF8String(best.patternFilePath);
+
+                    auto lock = std::scoped_lock(ContentRegistry::PatternLanguage::getRuntimeLock());
+                    auto applied = executePattern(provider, source, sourceName, {}, includePatterns);
+                    applied["path"] = sourceName;
+                    result["applied_pattern"] = applied;
+                }
+            }
+
+            return makeResult(result);
+        });
+
+        ContentRegistry::MCP::registerTool(romfs::get("mcp/tools/open_memory.json").string(), [](const nlohmann::json &data) -> nlohmann::json {
+            auto payload = data.at("data").get<std::string>();
+            auto encoding = data.value("encoding", "hex");
+            auto readOnly = data.value("read_only", false);
+
+            auto bytes = decodePayload(payload, encoding);
+
+            return runOnMainThread([bytes = std::move(bytes), readOnly] {
+                auto provider = ImHexApi::Provider::createProvider("hex.builtin.provider.mem_file", true, true);
+                if (provider == nullptr)
+                    throw std::runtime_error("Failed to create an in-memory data source");
+
+                if (auto *memProvider = dynamic_cast<MemoryFileProvider*>(provider.get()); memProvider != nullptr)
+                    memProvider->setReadOnly(readOnly);
+
+                provider->resize(bytes.size());
+                provider->writeRaw(0, bytes.data(), bytes.size());
+                provider->markDirty(false);
+
+                nlohmann::json result = {
+                    { "handle", provider->getID() },
+                    { "name", provider->getName() },
+                    { "type", provider->getTypeName().get() },
+                    { "size", provider->getActualSize() },
+                    { "is_writable", provider->isWritable() }
+                };
+                return makeResult(result);
+            });
+        });
+
+        ContentRegistry::MCP::registerTool(romfs::get("mcp/tools/diff_data_sources.json").string(), [](const nlohmann::json &data) -> nlohmann::json {
+            const auto handleA = data.at("handle_a").get<u64>();
+            const auto handleB = data.at("handle_b").get<u64>();
+            const auto algorithmName = data.value("algorithm", "");
+            const auto maxRegions = std::clamp<u64>(data.value("max_regions", u64(1000)), 1, 100000);
+
+            auto *providerA = findProviderByHandle(handleA);
+            auto *providerB = findProviderByHandle(handleB);
+            if (providerA == nullptr) throw std::runtime_error(fmt::format("No data source with handle {}", handleA));
+            if (providerB == nullptr) throw std::runtime_error(fmt::format("No data source with handle {}", handleB));
+
+            const auto &algorithms = ContentRegistry::Diffing::impl::getAlgorithms();
+            if (algorithms.empty())
+                throw std::runtime_error("No diffing algorithms are registered");
+
+            // Pick the requested algorithm (by unlocalized-name substring), else the first (Simple)
+            const ContentRegistry::Diffing::Algorithm *algorithm = algorithms.front().get();
+            if (!algorithmName.empty()) {
+                for (const auto &candidate : algorithms) {
+                    if (std::string(candidate->getUnlocalizedName().get()).contains(algorithmName)) {
+                        algorithm = candidate.get();
+                        break;
+                    }
+                }
+            }
+
+            // The algorithms call TaskManager::getCurrentTask(), so they MUST run inside a task.
+            auto promise = std::make_shared<std::promise<std::vector<ContentRegistry::Diffing::DiffTree>>>();
+            auto future = promise->get_future();
+
+            TaskManager::createTask("hex.builtin.mcp.diffing", TaskManager::NoProgress, [=](Task &) {
+                try {
+                    promise->set_value(algorithm->analyze(providerA, providerB));
+                } catch (...) {
+                    promise->set_exception(std::current_exception());
+                }
+            });
+
+            if (future.wait_for(std::chrono::seconds(120)) != std::future_status::ready)
+                throw std::runtime_error("Diffing timed out");
+
+            auto trees = future.get();
+
+            bool truncatedA = false, truncatedB = false;
+            nlohmann::json result = {
+                { "handle_a", handleA },
+                { "handle_b", handleB },
+                { "algorithm", algorithm->getUnlocalizedName().get() },
+                { "size_a", providerA->getActualSize() },
+                { "size_b", providerB->getActualSize() }
+            };
+
+            if (trees.size() >= 1) result["differences_a"] = diffTreeToJson(trees[0], maxRegions, truncatedA);
+            if (trees.size() >= 2) result["differences_b"] = diffTreeToJson(trees[1], maxRegions, truncatedB);
+            result["difference_count"] = result.value("differences_a", nlohmann::json::array()).size();
+            result["truncated"] = truncatedA || truncatedB;
+
             return makeResult(result);
         });
     }

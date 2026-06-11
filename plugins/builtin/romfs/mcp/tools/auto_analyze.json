@@ -1,0 +1,52 @@
+{
+    "name": "auto_analyze",
+    "title": "Auto-Analyze Data Source",
+    "description": "One-shot analysis of the currently selected data source: identifies the file type (libmagic), finds matching ImHex Pattern Language files, runs the best match, and returns the parsed structure as a JSON tree. Takes an agent from 'I opened a file' to 'here is its structure' in a single call. Requires ImHex content (magic db + patterns) to be installed for full results.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "include_patterns": {
+                "type": "boolean",
+                "default": true,
+                "description": "Whether to include the full parsed pattern tree from the applied pattern"
+            }
+        },
+        "required": []
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "handle": { "type": "number" },
+            "size": { "type": "number" },
+            "identification": {
+                "type": "object",
+                "properties": {
+                    "description": { "type": "string" },
+                    "mime_type": { "type": "string" },
+                    "signature_match": { "type": "string" }
+                }
+            },
+            "suggested_patterns": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string" },
+                        "description": { "type": "string" }
+                    }
+                }
+            },
+            "suggested_count": { "type": "number" },
+            "applied_pattern": {
+                "type": "object",
+                "description": "Result of running the best-matching pattern (success, pattern_count, out_variables, patterns tree, errors). Absent if no pattern matched.",
+                "properties": {
+                    "path": { "type": "string" },
+                    "success": { "type": "boolean" },
+                    "pattern_count": { "type": "number" }
+                }
+            }
+        },
+        "required": ["handle", "size", "identification", "suggested_patterns", "suggested_count"]
+    }
+}

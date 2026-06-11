@@ -1,0 +1,37 @@
+{
+    "name": "open_memory",
+    "title": "Open In-Memory Data Source",
+    "description": "Creates a new in-memory data source from agent-supplied bytes and selects it. Lets you pipe a carved buffer straight into the full ImHex toolchain (patterns, disassembly, hashing, YARA) without writing it to disk first.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "data": {
+                "type": "string",
+                "description": "The bytes to load, encoded per the 'encoding' parameter"
+            },
+            "encoding": {
+                "type": "string",
+                "enum": ["hex", "base64", "ascii"],
+                "default": "hex",
+                "description": "Encoding of the 'data' parameter"
+            },
+            "read_only": {
+                "type": "boolean",
+                "default": false,
+                "description": "Whether the in-memory data source should be read-only"
+            }
+        },
+        "required": ["data"]
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "handle": { "type": "number", "description": "Handle of the new in-memory data source" },
+            "name": { "type": "string" },
+            "type": { "type": "string" },
+            "size": { "type": "number" },
+            "is_writable": { "type": "boolean" }
+        },
+        "required": ["handle", "size", "is_writable"]
+    }
+}
