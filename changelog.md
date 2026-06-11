@@ -9,9 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] — MCP Tool Surface Expansion
 
-### Added — MCP Tool Surface (49 tools total)
+### Added — MCP Tool Surface (50 tools total)
 
-This release extends the native MCP server from 7 tools to **49 tools** across 12 categories, making the full ImHex analysis engine scriptable from any MCP-compatible AI client.
+This release extends the native MCP server from 7 tools to **50 tools** across 12 categories, making the full ImHex analysis engine scriptable from any MCP-compatible AI client.
 
 #### Core Analysis Tools (Phase 1) — `54e871a`
 
@@ -53,6 +53,10 @@ This release extends the native MCP server from 7 tools to **49 tools** across 1
 - `export_region` — export a byte range to a file on disk
 - `data_info` — composite analysis report (libmagic ID + entropy + byte statistics + header typed interpretations) in one call
 - `func_profile` — heuristic code region analysis (instruction count, basic block count, call/jump/return counts, entry point detection)
+
+#### Region Comparison — `7dbf45f`
+
+- `compare_regions` — read two regions from the same data source and compare them byte-by-byte. Returns similarity percentage, matching/differing byte counts, SHA256 of each region, size delta, and the first N differing offsets with byte values. Fills the gap between `read_data` (single region) and `diff_data_sources` (two separate files). Useful for finding embedded duplicates (version strings, repeated configs), detecting code reuse within a single binary, and checking if a region was patched. [R] (pure read, no main-thread marshaling needed).
 
 #### Archive Plugin Port — `474ad3f`
 

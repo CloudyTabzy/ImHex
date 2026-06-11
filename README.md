@@ -323,7 +323,7 @@ imhex-gui.exe --mcp-server
 
 | Capability | Standard ImHex | This Fork |
 |---|---|---|
-| Native MCP server | ❌ | ✅ 49 tools |
+| Native MCP server | ❌ | ✅ 50 tools |
 | Headless mode (no GPU) | ❌ | ✅ `--mcp-server` |
 | libmagic in headless | ❌ | ✅ Compiles .mgc at startup |
 | Pattern Language over MCP | ❌ | ✅ `run_pattern_file` |
@@ -333,7 +333,7 @@ imhex-gui.exe --mcp-server
 | Hash registry | ❌ | ✅ 73 algorithms |
 | Hex editor annotations | ❌ | ✅ Highlights/tooltips via MCP |
 
-### 49 Native MCP Tools Across 12 Categories
+### 50 Native MCP Tools Across 12 Categories
 
 **File & Provider Operations**
 - `open_file`, `close_file`, `list_open_data_sources`, `select_data_source`, `get_provider_info`
@@ -375,7 +375,8 @@ imhex-gui.exe --mcp-server
 - `yara_scan` — inline rule or `.yar` path; tags, metadata, per-string match regions
 
 **Comparison**
-- `diff_data_sources` — structural diff (Simple + Myers) via Diffing registry
+- `diff_data_sources` — structural diff (Simple + Myers) between two open files via Diffing registry
+- `compare_regions` — byte-level diff of two regions within the same file (similarity %, SHA256, first N diffs)
 - `copy_bytes_as` — format region as C/C++/Rust/Python/Java/Go/JS/Swift/Pascal array
 
 **Bookmarks & Annotations**
