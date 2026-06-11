@@ -27,25 +27,6 @@
   <a title="Read the documentation of ImHex!" href="https://docs.werwolv.net"><img alt="Read the documentation of ImHex!" src="resources/dist/common/read_docs_banner.png"></a>
 </p>
 
-## Supporting
-
-If you like my work, please consider supporting me on GitHub Sponsors, Ko-Fi or PayPal. Thanks a lot!
-
-<p align="center">
-<a href="https://github.com/sponsors/WerWolv"><img src="https://werwolv.net/assets/github_banner.png" alt="GitHub donate button" /></a>
-<a href="https://ko-fi.com/WerWolv"><img src="https://werwolv.net/assets/kofi_banner.png" alt="Ko-Fi donate button" /></a>
-<a href="https://werwolv.net/donate"><img src="https://werwolv.net/assets/paypal_banner.png" alt="PayPal donate button" /></a>
-</p>
-
-### Notable Sponsors
-|                                                                                                     |                                                                                   |
-|:---------------------------------------------------------------------------------------------------:|-----------------------------------------------------------------------------------|
-| [![JetBrains logo](https://avatars.githubusercontent.com/u/878437?s=48)](https://www.jetbrains.com) | JetBrains, providing us with free All Products Pack licenses for development      |
-|   [![SignPath logo](https://avatars.githubusercontent.com/u/34448643?s=48)](https://signpath.io/)   | SignPath, providing us with free Code Signing Certificates for our Windows builds |
-|     [![AWS logo](https://avatars.githubusercontent.com/u/2232217?s=48)](https://aws.amazon.com)     | Amazon, providing us with free AWS Cloud Credits for our CI                       |
-
-Would you like to appear here as well? Contact us at [imhex@werwolv.net](mailto:imhex@werwolv.net)!
-
 ## Screenshots
 ![Hex editor, patterns and data information](https://github.com/user-attachments/assets/902a7c4c-410d-490f-999e-14c856fec027)
 ![Bookmarks, data information, find view and data processor](https://github.com/user-attachments/assets/58eefa1f-31c9-4bb8-a1c1-8cdd8ddbd29f)
@@ -323,7 +304,7 @@ imhex-gui.exe --mcp-server
 
 | Capability | Standard ImHex | This Fork |
 |---|---|---|
-| Native MCP server | ❌ | ✅ 52 tools |
+| Native MCP server | ❌ | ✅ 50+ tools |
 | Headless mode (no GPU) | ❌ | ✅ `--mcp-server` |
 | libmagic in headless | ❌ | ✅ Compiles .mgc at startup |
 | Pattern Language over MCP | ❌ | ✅ `run_pattern_file` |
@@ -396,14 +377,32 @@ imhex-gui.exe --mcp-server
 
 The companion Python bridge ([imhex-mcp-bridge](../imhex-mcp-bridge)) provides a stdio MCP interface for AI clients. It auto-detects ImHex and falls back to 21 pure-Python tools when ImHex is offline — so agents always have a working toolchain.
 
-**Bridge features:**
+**At a glance:**
 - **49 native tools** proxied through TCP to ImHex when running
 - **21 Python fallback tools** when ImHex is offline (`bytes_read`, `bytes_hash`, `bytes_entropy`, `pe_info`, `elf_info`, etc.)
 - **Lazy mode** — 12 meta-tools reduce initial context by ~86%
-- **TOON encoding** — 30-60% token reduction on heavy tool outputs
-- **JSON repair** — robust parsing of LLM-emitted JSON with `json_repair` fallback
-- **Session tracking** — manage multiple open files with context isolation
-- **Session persistence** — `.mxsproj` save/load for resumable RE sessions
+
+### Python MCP Bridge — Advanced Features
+
+#### TOON Encoding
+
+Token-Optimized Object Notation (TOON) is an opt-per-call binary encoding that reduces the token cost of tool outputs by 30-60% on heavy payloads. Applied automatically when `format="toon"` is passed to any eligible tool (lists of records, tabular arrays, structured reports). Tools with small/flat return values (status, scalar, destructive ops) use `ALWAYS_JSON_TOOLS` to skip encoding overhead. All new tools must be classified for TOON eligibility at registration time.
+
+#### JSON Repair (`parse_json` meta-tool)
+
+All tool outputs are serialized with orjson on the hot path (2-12x faster than stdlib json). The bridge also exposes a dedicated `parse_json` meta-tool that handles malformed input from upstream sources: trailing commas, unquoted keys, markdown ```json fences, and truncated output. It tries orjson first (fast path for valid JSON) and falls back to `json_repair` for transparent error correction. Returns `ok`, `value`, `repair_count`, and `source` for correlation.
+
+#### Session Tracking
+
+The bridge maintains a session registry binding handles to sessions (session IDs, file paths, ImHex handles, sizes, active context). Three management tools (`list_sessions`, `session_info`, `switch_session`) enable context-switching between multiple open files without reopening. Switch a session and all subsequent tools (read_data, calculate_hash, disassemble, etc.) operate on that file immediately.
+
+#### Session Persistence
+
+Four management tools handle save/load for agent-facing and GUI-compatible formats:
+- `save_session` — serializes open files + bookmarks to `.mxsproj` (plain JSON)
+- `load_session` — restores all files, bookmarks, and active context from `.mxsproj`
+- `export_hexproj` — exports current state to ImHex-native `.hexproj` (tar archive) for GUI-sidecar review
+- `parse_json` — robust JSON parsing with auto-repair for LLM-emitted data
 
 ### Quick Example: Agent Analyzing a PE File
 
@@ -504,17 +503,23 @@ Information on how to install ImHex can be found in the [Install](/INSTALL.md) g
 
 ## Compiling
 
-To compile ImHex on any platform, GCC (or Clang) is required with a version that supports C++23 or higher. 
-Windows and Linux releases are being built using latest available GCC.
-MacOS releases are being built using latest available LLVM Clang.
-
-Important to note is, the MSVC and AppleClang compilers are both **NOT** supported since they're both generally severely outdated and lack features GCC and LLVM Clang have.
+This fork targets **MSVC (Visual Studio 2022)** on Windows as the primary build environment. GCC/Clang builds on other platforms follow the upstream instructions.
 
 > [!NOTE]
 > Many dependencies are bundled into the repository using submodules so make sure to clone it using the `--recurse-submodules` option.
 > All dependencies that aren't bundled, can be installed using the dependency installer scripts found in the `/dist` folder.
 
-For more information, check out the [Compiling](/dist/compiling) guide.
+### Windows (MSVC)
+
+```powershell
+$env:VCPKG_ROOT = "C:\vcpkg"
+cmake --preset vs2022
+cmake --build build/vs2022 --target imhex_all
+```
+
+### Linux / macOS
+
+Follow the upstream [Compiling](/dist/compiling) guide for your platform (GCC or LLVM Clang required, C++23).
 
 ## Contributing
 See [Contributing](/CONTRIBUTING.md)
@@ -575,17 +580,8 @@ Notable exceptions to this are the following parts which are under the LGPLv2.1 
 
 The reason for this is to allow for proprietary plugins to be developed for ImHex.
 
-### Code Signing Policy
-
-Free code signing provided by [SignPath.io](https://about.signpath.io/),
-certificate by [SignPath Foundation](https://signpath.org/).
-
-This program will not transfer any information to other networked systems
-unless specifically requested by the user or the person installing or
-operating it.
-
 #### People with direct push access
 - [WerWolv](https://github.com/WerWolv)
 - [iTrooz](https://github.com/iTrooz)
-- [jumanji144](https://github.com/jumanji144)
+- [jumanli144](https://github.com/jumanji144)
 - [AxCut](https://github.com/paxcut)

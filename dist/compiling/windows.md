@@ -1,25 +1,35 @@
-### Compiling ImHex on Windows
+### Compiling ImHex on Windows (MSVC)
 
-On Windows, ImHex is built through [msys2 / mingw](https://www.msys2.org/)'s gcc.
+This fork builds with **Visual Studio 2022** (MSVC) on Windows.
 
-1. Download and install msys2 from their [website](https://www.msys2.org/).
-2. Open the `MSYS2 MinGW x64` shell
-3. Clone the repo using `git clone https://github.com/WerWolv/ImHex --recurse-submodules`
-4. Install all the dependencies using `./ImHex/dist/get_deps_msys2.sh`
-5. Build ImHex itself using the following commands:
+#### Prerequisites
 
-```sh
-cd ImHex
-mkdir build
-cd build
-cmake -G "Ninja"                          \
-  -DCMAKE_BUILD_TYPE=Release              \
-  -DCMAKE_INSTALL_PREFIX="./install"      \
-  -DIMHEX_USE_DEFAULT_BUILD_SETTINGS=ON   \
-  ..
-ninja install
+1. **Visual Studio 2022 Build Tools** or full Visual Studio 2022 (Community/Pro/Enterprise) with the "Desktop development with C++" workload.
+2. **vcpkg** — installed at `C:\vcpkg` (or set `VCPKG_ROOT` to your install path).
+3. **CMake** 3.25+ and **Ninja** on your PATH.
+4. **Git** — clone with `--recurse-submodules`.
+
+#### Build Steps
+
+```powershell
+# Set vcpkg root (or add to your profile)
+$env:VCPKG_ROOT = "C:\vcpkg"
+
+# Configure and build
+cmake --preset vs2022
+cmake --build build/vs2022 --target imhex_all
 ```
 
-ImHex will look for any extra resources either in various folders directly next to the executable or in `%localappdata%/imhex`
+The output binary will be at `build/vs2022/imhex-gui.exe`.
 
-For low RAM-usage system, you can use `mingw32-make -j N install` instead, to reduce RAM usage at compile time. Where `N` is amount of jobs you are willling to run at once. Roughly ~1 GB of RAM usage per job.
+#### Launch Headless MCP Server
+
+```powershell
+.\build\vs2022\imhex-gui.exe --mcp-server
+```
+
+#### Notes
+
+- The `vs2022` CMake preset handles vcpkg integration automatically.
+- For Release builds, set `$env:CMAKE_BUILD_TYPE = "Release"` before configuring.
+- ImHex will look for extra resources next to the executable or in `%localappdata%/imhex`.

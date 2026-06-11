@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added — MCP Tool Surface (52 tools total)
 
 This release extends the native MCP server from 7 tools to **52 tools** across 12 categories, making the full ImHex analysis engine scriptable from any MCP-compatible AI client.
+This release also overhauls the README documentation: removes the Supporting/Notable Sponsors sections, expands the bridge feature documentation (TOON, JSON repair, orjson, session tracking/persistence) into dedicated subsections, updates the Compiling guide for MSVC as the primary build environment, and removes the Code Signing Policy section.
 
 #### Core Analysis Tools (Phase 1) — `54e871a`
 
