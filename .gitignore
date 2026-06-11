@@ -22,3 +22,12 @@ CMakeUserPresets.json
 Brewfile.lock.json
 
 vcpkg.json
+
+# Test scripts (not for upstream)
+test_mcp*.py
+*.bat
+configure.bat
+build.bat
+build_headless.bat
+test_version.bat
+test_mcp_server.bat
