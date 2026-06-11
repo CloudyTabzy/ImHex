@@ -1,0 +1,9 @@
+{
+    "name": "extract_metadata",
+    "description": "One-call triage metadata for the selected data source. Returns file size, MD5/SHA1/SHA256/SHA512 hashes, Shannon entropy, libmagic file type, and first/last 16 bytes (hex + ASCII). Replaces 4-5 separate tool calls (get_provider_info, calculate_hash x4, calculate_entropy, identify_file, read_data x2). Useful for quick binary triage and identification.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+    }
+}

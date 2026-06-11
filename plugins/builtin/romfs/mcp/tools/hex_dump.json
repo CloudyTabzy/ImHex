@@ -1,0 +1,34 @@
+{
+    "name": "hex_dump",
+    "description": "Classic hex+ASCII dump with offset column (xxd-style format). Returns the dump as a single multi-line string plus a structured array of rows. Useful for visual inspection of binary data in a familiar format. The dump format is: 8-digit offset, hex bytes separated by spaces, optional ASCII column with '.' for non-printable characters.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "address": {
+                "type": "integer",
+                "description": "Start address of the region to dump (default: 0)",
+                "default": 0
+            },
+            "size": {
+                "type": "integer",
+                "description": "Number of bytes to dump (clamped to data source size)"
+            },
+            "bytes_per_row": {
+                "type": "integer",
+                "description": "Number of bytes per row in the output (1-64, default: 16)",
+                "default": 16
+            },
+            "max_rows": {
+                "type": "integer",
+                "description": "Maximum number of rows to emit (1-100000, default: 256)",
+                "default": 256
+            },
+            "include_ascii": {
+                "type": "boolean",
+                "description": "Include the ASCII column (default: true)",
+                "default": true
+            }
+        },
+        "required": ["size"]
+    }
+}

@@ -2438,6 +2438,187 @@ namespace hex::plugin::builtin {
             };
             return makeResult(result);
         });
+
+        // 13) extract_metadata — one-call triage metadata for the active data source.
+        //     Combines: file size, MD5/SHA1/SHA256/SHA512 hashes, Shannon entropy,
+        //     libmagic file type description, and first/last 16 bytes (header/footer).
+        //     Replaces 4-5 separate tool calls (get_provider_info, calculate_hash x4,
+        //     calculate_entropy, identify_file, read_data x2). [R] (pure read).
+        ContentRegistry::MCP::registerTool(romfs::get("mcp/tools/extract_metadata.json").string(), [](const nlohmann::json &data) -> nlohmann::json {
+            auto provider = getActiveProvider();
+
+            const auto providerSize = provider->getActualSize();
+
+            // Hash the entire data source
+            const auto toHex = [](const auto &v) { return crypt::encode16({ v.begin(), v.end() }); };
+            const auto md5    = toHex(crypt::md5(provider, 0, providerSize));
+            const auto sha1   = toHex(crypt::sha1(provider, 0, providerSize));
+            const auto sha256 = toHex(crypt::sha256(provider, 0, providerSize));
+            const auto sha512 = toHex(crypt::sha512(provider, 0, providerSize));
+
+            // Entropy over the full file (one big block)
+            std::array<u64, 256> frequencies = {};
+            std::vector<u8> buffer;
+            for (u64 offset = 0; offset < providerSize; offset += buffer.size()) {
+                buffer.resize(std::min<u64>(ScanChunkSize, providerSize - offset));
+                provider->read(offset, buffer.data(), buffer.size());
+                for (const u8 byte : buffer)
+                    frequencies[byte] += 1;
+            }
+            const double entropy = entropyFromFrequencies(frequencies, providerSize);
+
+            // libmagic identification
+            std::vector<u8> header(std::min<u64>(providerSize, u64(32)));
+            if (!header.empty())
+                provider->read(0, header.data(), header.size());
+            const auto description = magic::getDescription(provider);
+            const auto mimeType    = magic::getMIMEType(provider);
+            const auto extensions  = magic::getExtensions(provider);
+
+            // First 16 bytes
+            std::vector<u8> first16(std::min<u64>(providerSize, u64(16)));
+            if (!first16.empty())
+                provider->read(0, first16.data(), first16.size());
+
+            // Last 16 bytes
+            std::vector<u8> last16(std::min<u64>(providerSize, u64(16)));
+            if (!last16.empty() && providerSize >= 16)
+                provider->read(providerSize - 16, last16.data(), last16.size());
+            else if (!last16.empty())
+                provider->read(0, last16.data(), last16.size());
+
+            nlohmann::json result = {
+                { "handle", provider->getID() },
+                { "name", provider->getName() },
+                { "type", provider->getTypeName().get() },
+                { "size", providerSize },
+                { "is_writable", provider->isWritable() },
+                { "hashes", {
+                    { "md5", md5 },
+                    { "sha1", sha1 },
+                    { "sha256", sha256 },
+                    { "sha512", sha512 }
+                }},
+                { "entropy", entropy },
+                { "entropy_classification",
+                    entropy > 7.5 ? "likely encrypted/compressed" :
+                    entropy > 6.0 ? "likely structured data" :
+                    "likely text/code" },
+                { "file_type", {
+                    { "description", description },
+                    { "mime_type", mimeType },
+                    { "extensions", extensions }
+                }},
+                { "first_bytes_hex", toHex(first16) },
+                { "first_bytes_ascii", [&] {
+                    std::string s;
+                    s.reserve(first16.size());
+                    for (u8 b : first16) s += (b >= 0x20 && b <= 0x7E) ? char(b) : '.';
+                    return s;
+                }() },
+                { "last_bytes_hex", toHex(last16) },
+                { "last_bytes_ascii", [&] {
+                    std::string s;
+                    s.reserve(last16.size());
+                    for (u8 b : last16) s += (b >= 0x20 && b <= 0x7E) ? char(b) : '.';
+                    return s;
+                }() }
+            };
+            return makeResult(result);
+        });
+
+        // 14) hex_dump — classic hex+ASCII dump with offset column (xxd-style).
+        //     Familiar format for visual inspection. Returns the dump as a single
+        //     multi-line string plus a structured array of rows. [R] (pure read).
+        ContentRegistry::MCP::registerTool(romfs::get("mcp/tools/hex_dump.json").string(), [](const nlohmann::json &data) -> nlohmann::json {
+            auto provider = getActiveProvider();
+
+            const auto address  = data.value("address", u64(0));
+            const auto requestedSize = data.at("size").get<u64>();
+            const auto size     = clampRegion(provider, address, requestedSize);
+            const auto bytesPerRow = std::clamp<u32>(data.value("bytes_per_row", u32(16)), 1, 64);
+            const auto maxRows  = std::clamp<u64>(data.value("max_rows", u64(256)), 1, u64(100000));
+            const auto includeAscii = data.value("include_ascii", true);
+
+            std::vector<u8> buffer(size);
+            if (size > 0)
+                provider->read(address, buffer.data(), size);
+
+            const u64 totalRows = (size + bytesPerRow - 1) / bytesPerRow;
+            const u64 rowsToEmit = std::min(totalRows, maxRows);
+            const bool truncated = totalRows > rowsToEmit;
+
+            std::string dump;
+            dump.reserve(rowsToEmit * (16 + bytesPerRow * 3 + 4));
+            nlohmann::json rows = nlohmann::json::array();
+
+            for (u64 row = 0; row < rowsToEmit; row++) {
+                const u64 rowAddress = address + row * bytesPerRow;
+                const u64 rowStart   = row * bytesPerRow;
+                const u64 rowEnd     = std::min<u64>(rowStart + bytesPerRow, size);
+
+                // Offset column (8 hex digits, lowercase)
+                char offsetStr[16];
+                std::snprintf(offsetStr, sizeof(offsetStr), "%08llx: ", static_cast<unsigned long long>(rowAddress));
+                dump += offsetStr;
+
+                std::string hexPart;
+                std::string asciiPart;
+                hexPart.reserve(bytesPerRow * 3);
+                if (includeAscii) asciiPart.reserve(bytesPerRow);
+
+                for (u64 i = rowStart; i < rowEnd; i++) {
+                    char byteStr[4];
+                    std::snprintf(byteStr, sizeof(byteStr), "%02x", buffer[i]);
+                    hexPart += byteStr;
+                    hexPart += (i == rowEnd - 1) ? " " : " ";
+                    if (includeAscii) {
+                        const u8 b = buffer[i];
+                        asciiPart += (b >= 0x20 && b <= 0x7E) ? char(b) : '.';
+                    }
+                }
+
+                // Pad the hex column if this is the last (partial) row
+                if (rowEnd - rowStart < bytesPerRow) {
+                    for (u64 i = 0; i < (bytesPerRow - (rowEnd - rowStart)); i++) {
+                        hexPart += "   ";  // 3 chars per missing byte
+                    }
+                }
+
+                dump += hexPart;
+                if (includeAscii) {
+                    dump += " ";
+                    dump += asciiPart;
+                }
+                dump += "\n";
+
+                if (includeAscii) {
+                    rows.push_back({
+                        { "offset", rowAddress },
+                        { "hex", hexPart },
+                        { "ascii", asciiPart }
+                    });
+                } else {
+                    rows.push_back({
+                        { "offset", rowAddress },
+                        { "hex", hexPart }
+                    });
+                }
+            }
+
+            nlohmann::json result = {
+                { "handle", provider->getID() },
+                { "address", address },
+                { "size", size },
+                { "bytes_per_row", bytesPerRow },
+                { "row_count", rowsToEmit },
+                { "total_rows", totalRows },
+                { "truncated", truncated },
+                { "dump", dump },
+                { "rows", rows }
+            };
+            return makeResult(result);
+        });
     }
 
 }

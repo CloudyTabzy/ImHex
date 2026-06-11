@@ -323,7 +323,7 @@ imhex-gui.exe --mcp-server
 
 | Capability | Standard ImHex | This Fork |
 |---|---|---|
-| Native MCP server | ❌ | ✅ 50 tools |
+| Native MCP server | ❌ | ✅ 52 tools |
 | Headless mode (no GPU) | ❌ | ✅ `--mcp-server` |
 | libmagic in headless | ❌ | ✅ Compiles .mgc at startup |
 | Pattern Language over MCP | ❌ | ✅ `run_pattern_file` |
@@ -333,7 +333,7 @@ imhex-gui.exe --mcp-server
 | Hash registry | ❌ | ✅ 73 algorithms |
 | Hex editor annotations | ❌ | ✅ Highlights/tooltips via MCP |
 
-### 50 Native MCP Tools Across 12 Categories
+### 52 Native MCP Tools Across 12 Categories
 
 **File & Provider Operations**
 - `open_file`, `close_file`, `list_open_data_sources`, `select_data_source`, `get_provider_info`
@@ -357,6 +357,8 @@ imhex-gui.exe --mcp-server
 - `detect_file_type` — 40+ magic signatures (also backed by libmagic)
 - `data_info` — composite report (libmagic + entropy + stats + header interpretations)
 - `func_profile` — heuristic code region analysis (instructions, basic blocks, calls, returns, entry points)
+- `extract_metadata` — one-call triage (file size, MD5/SHA1/SHA256/SHA512, entropy, magic, first/last 16 bytes)
+- `hex_dump` — classic xxd-style hex+ASCII dump with offset column
 
 **File Type Identification**
 - `identify_file` — real libmagic (description/MIME/extensions)

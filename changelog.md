@@ -9,9 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] — MCP Tool Surface Expansion
 
-### Added — MCP Tool Surface (50 tools total)
+### Added — MCP Tool Surface (52 tools total)
 
-This release extends the native MCP server from 7 tools to **50 tools** across 12 categories, making the full ImHex analysis engine scriptable from any MCP-compatible AI client.
+This release extends the native MCP server from 7 tools to **52 tools** across 12 categories, making the full ImHex analysis engine scriptable from any MCP-compatible AI client.
 
 #### Core Analysis Tools (Phase 1) — `54e871a`
 
@@ -57,6 +57,11 @@ This release extends the native MCP server from 7 tools to **50 tools** across 1
 #### Region Comparison — `7dbf45f`
 
 - `compare_regions` — read two regions from the same data source and compare them byte-by-byte. Returns similarity percentage, matching/differing byte counts, SHA256 of each region, size delta, and the first N differing offsets with byte values. Fills the gap between `read_data` (single region) and `diff_data_sources` (two separate files). Useful for finding embedded duplicates (version strings, repeated configs), detecting code reuse within a single binary, and checking if a region was patched. [R] (pure read, no main-thread marshaling needed).
+
+#### Triage & Visual Inspection — `TBD`
+
+- `extract_metadata` — one-call triage metadata for the active data source. Returns file size, MD5/SHA1/SHA256/SHA512 hashes, Shannon entropy + classification, libmagic file type (description/MIME/extensions), and the first/last 16 bytes in both hex and ASCII. Replaces 4-5 separate tool calls (`get_provider_info`, `calculate_hash` x4, `calculate_entropy`, `identify_file`, `read_data` x2). [R] (pure read, no marshaling needed).
+- `hex_dump` — classic xxd-style hex+ASCII dump with offset column. Returns the dump as a single multi-line string plus a structured array of rows (offset, hex, ASCII). Configurable bytes-per-row (1-64, default 16), max rows (default 256), and optional ASCII column. Useful for visual inspection of binary data in a familiar format. [R] (pure read).
 
 #### Archive Plugin Port — `474ad3f`
 
