@@ -203,6 +203,10 @@ namespace hex::plugin::disasm {
             for (std::string_view option : optionsVector) {
                 option = wolv::util::trim(option);
 
+                // Skip empty tokens (e.g. when no options are given, or trailing commas)
+                if (option.empty())
+                    continue;
+
                 bool shouldAdd = true;
                 if (option.starts_with("no-")) {
                     shouldAdd = false;

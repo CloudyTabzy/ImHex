@@ -1,0 +1,68 @@
+{
+    "name": "run_pattern_file",
+    "title": "Run Pattern Language Code",
+    "description": "Evaluates ImHex Pattern Language code against the currently selected data source and returns the parsed structure as a JSON tree, along with any compile/eval errors, console output and 'out' variables. This is ImHex's core binary-parsing engine. Provide exactly one of 'source' (inline code) or 'path' (a .hexpat file, e.g. from suggest_patterns). Pattern includes (std library etc.) resolve automatically.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "source": {
+                "type": "string",
+                "description": "Inline Pattern Language source code"
+            },
+            "path": {
+                "type": "string",
+                "description": "Path to a .hexpat pattern file to execute (alternative to source)"
+            },
+            "in_variables": {
+                "type": "object",
+                "description": "Input variables (in <type> name) to pass into the pattern, as name -> value (number, boolean or string)"
+            },
+            "include_patterns": {
+                "type": "boolean",
+                "default": true,
+                "description": "Whether to include the full parsed pattern tree in the result. Set false for large files when you only need out variables / errors"
+            }
+        },
+        "required": []
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "handle": { "type": "number" },
+            "success": {
+                "type": "boolean",
+                "description": "True if the pattern compiled and evaluated without errors"
+            },
+            "pattern_count": { "type": "number", "description": "Number of pattern fields created" },
+            "compile_errors": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "message": { "type": "string" },
+                        "line": { "type": "number" },
+                        "column": { "type": "number" }
+                    }
+                }
+            },
+            "eval_error": {
+                "type": ["object", "null"],
+                "properties": {
+                    "message": { "type": "string" },
+                    "line": { "type": "number" },
+                    "column": { "type": "number" }
+                }
+            },
+            "out_variables": {
+                "type": "object",
+                "description": "Values of 'out' variables declared in the pattern"
+            },
+            "console": { "type": "string", "description": "Pattern console output (std::print etc.)" },
+            "patterns": {
+                "type": "array",
+                "description": "Parsed pattern tree as JSON (present when include_patterns is true and evaluation succeeded)"
+            }
+        },
+        "required": ["handle", "success", "pattern_count", "compile_errors", "eval_error", "out_variables"]
+    }
+}

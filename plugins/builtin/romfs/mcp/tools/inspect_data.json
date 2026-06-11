@@ -1,0 +1,40 @@
+{
+    "name": "inspect_data",
+    "title": "Inspect Data as Types",
+    "description": "Reads up to 16 bytes at an address and interprets them as every common data type at once (signed/unsigned integers of width 8/16/24/32/48/64, 32/64-bit floats, bool, char, ULEB128, 32/64-bit Unix timestamps, and UUID/GUID). Like ImHex's Data Inspector. Use the 'types' filter to limit the output.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "address": {
+                "type": "number",
+                "description": "Address to interpret"
+            },
+            "endian": {
+                "type": "string",
+                "enum": ["little", "big"],
+                "default": "little",
+                "description": "Byte order for multi-byte interpretations"
+            },
+            "types": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Optional list of interpretation names to return (e.g. ['u32','f32','time32']). Returns all if omitted"
+            }
+        },
+        "required": ["address"]
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "handle": { "type": "number" },
+            "address": { "type": "number" },
+            "endian": { "type": "string" },
+            "bytes_read": { "type": "number" },
+            "interpretations": {
+                "type": "object",
+                "description": "Map of type name to interpreted value"
+            }
+        },
+        "required": ["handle", "address", "endian", "bytes_read", "interpretations"]
+    }
+}

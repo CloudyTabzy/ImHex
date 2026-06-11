@@ -1,0 +1,31 @@
+{
+    "name": "suggest_patterns",
+    "title": "Suggest Pattern Files",
+    "description": "Finds ImHex Pattern Language files (.hexpat) on disk whose magic conditions match the currently selected data source. Returns the candidate pattern files so you can run one with run_pattern_file. This is the bridge from an unknown binary to a structured parse. Returns an empty list if no pattern library is installed.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "handle": { "type": "number" },
+            "patterns": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string", "description": "Path to the .hexpat file, pass to run_pattern_file" },
+                        "author": { "type": "string" },
+                        "description": { "type": "string" },
+                        "mime_type": { "type": "string" },
+                        "magic_offset": { "type": "number" }
+                    }
+                }
+            },
+            "count": { "type": "number" }
+        },
+        "required": ["handle", "patterns", "count"]
+    }
+}

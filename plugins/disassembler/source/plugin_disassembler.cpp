@@ -21,6 +21,8 @@ namespace hex::plugin::disasm {
     void registerCapstoneArchitectures();
     void registerCustomArchitectures();
 
+    void registerDisassemblerMCPTools();
+
 }
 
 namespace {
@@ -50,4 +52,6 @@ IMHEX_PLUGIN_SETUP("Disassembler", "WerWolv", "Disassembler support") {
 
     registerCapstoneArchitectures();
     registerCustomArchitectures();
+
+    registerDisassemblerMCPTools();
 }

@@ -1,24 +1,36 @@
 #include <content/providers/file_provider.hpp>
 #include <hex/api/content_registry/communication_interface.hpp>
+#include <hex/api/content_registry/pattern_language.hpp>
 #include <hex/api/imhex_api/provider.hpp>
 #include <hex/api/imhex_api/bookmarks.hpp>
 #include <hex/api/task_manager.hpp>
 #include <hex/helpers/crypto.hpp>
 #include <hex/helpers/fmt.hpp>
+#include <hex/helpers/magic.hpp>
 #include <hex/helpers/utils.hpp>
 #include <hex/providers/provider.hpp>
 #include <romfs/romfs.hpp>
 #include <wolv/literals.hpp>
+#include <wolv/io/file.hpp>
+#include <wolv/utils/string.hpp>
 
 #include <nlohmann/json.hpp>
 
+#include <pl/pattern_language.hpp>
+#include <pl/formatters.hpp>
+#include <pl/core/token.hpp>
+#include <pl/core/errors/error.hpp>
+
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <ctime>
 #include <functional>
 #include <future>
+#include <map>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -323,6 +335,182 @@ namespace hex::plugin::builtin {
                 { "comment", entry.comment },
                 { "color", entry.color }
             };
+        }
+
+        // ============================================================================
+        // PATTERN LANGUAGE HELPERS
+        // ============================================================================
+
+        /**
+         * @brief Converts a pattern language literal (the type of in/out variables) to JSON
+         */
+        nlohmann::json literalToJson(const pl::core::Token::Literal &literal) {
+            if (literal.isString())
+                return literal.toString(false);
+            if (literal.isBoolean())
+                return literal.toBoolean();
+            if (literal.isFloatingPoint())
+                return literal.toFloatingPoint();
+            if (literal.isCharacter())
+                return std::string(1, literal.toCharacter());
+            if (literal.isPattern())
+                return literal.toString(true);
+            if (literal.isSigned()) {
+                auto value = literal.toSigned();
+                if (value >= std::numeric_limits<i64>::min() && value <= std::numeric_limits<i64>::max())
+                    return i64(value);
+                return literal.toString(true);
+            }
+            if (literal.isUnsigned()) {
+                auto value = literal.toUnsigned();
+                if (value <= std::numeric_limits<u64>::max())
+                    return u64(value);
+                return literal.toString(true);
+            }
+
+            return literal.toString(true);
+        }
+
+        /**
+         * @brief Converts a JSON value to a pattern language literal for use as an input variable
+         */
+        pl::core::Token::Literal jsonToLiteral(const nlohmann::json &value) {
+            if (value.is_boolean())
+                return value.get<bool>();
+            if (value.is_number_unsigned())
+                return u128(value.get<u64>());
+            if (value.is_number_integer())
+                return i128(value.get<i64>());
+            if (value.is_number_float())
+                return value.get<double>();
+            if (value.is_string())
+                return value.get<std::string>();
+
+            throw std::runtime_error("Input variables must be numbers, booleans or strings");
+        }
+
+        nlohmann::json compileErrorToJson(const pl::core::err::CompileError &error) {
+            const auto &location = error.getLocation();
+            return {
+                { "message", error.getMessage() },
+                { "line", location.line },
+                { "column", location.column }
+            };
+        }
+
+        // ============================================================================
+        // DATA INSPECTOR HELPERS (native, headless-safe — the registry display
+        // functions call ImGui and cannot be used off the main thread)
+        // ============================================================================
+
+        template<typename T>
+        T readScalar(std::span<const u8> data, std::endian endian) {
+            std::array<u8, sizeof(T)> bytes = {};
+            std::memcpy(bytes.data(), data.data(), sizeof(T));
+            if (endian != std::endian::native)
+                std::ranges::reverse(bytes);
+
+            T value;
+            std::memcpy(&value, bytes.data(), sizeof(T));
+            return value;
+        }
+
+        i64 readSignedInteger(std::span<const u8> data, size_t byteCount, std::endian endian) {
+            u64 raw = 0;
+            for (size_t i = 0; i < byteCount; i++) {
+                const size_t shift = endian == std::endian::little ? i : (byteCount - 1 - i);
+                raw |= u64(data[i]) << (shift * 8);
+            }
+            // Sign-extend from byteCount*8 bits
+            const u64 signBit = u64(1) << (byteCount * 8 - 1);
+            if (raw & signBit)
+                raw |= ~((signBit << 1) - 1);
+            return i64(raw);
+        }
+
+        u64 readUnsignedInteger(std::span<const u8> data, size_t byteCount, std::endian endian) {
+            u64 raw = 0;
+            for (size_t i = 0; i < byteCount; i++) {
+                const size_t shift = endian == std::endian::little ? i : (byteCount - 1 - i);
+                raw |= u64(data[i]) << (shift * 8);
+            }
+            return raw;
+        }
+
+        std::string formatUnixTimestamp(i64 epochSeconds) {
+            const std::time_t time = epochSeconds;
+            std::tm tm = {};
+        #if defined(_WIN32)
+            if (gmtime_s(&tm, &time) != 0)
+                return "invalid";
+        #else
+            if (gmtime_r(&time, &tm) == nullptr)
+                return "invalid";
+        #endif
+            std::array<char, 32> buffer = {};
+            if (std::strftime(buffer.data(), buffer.size(), "%Y-%m-%dT%H:%M:%SZ", &tm) == 0)
+                return "invalid";
+            return buffer.data();
+        }
+
+        /**
+         * @brief Produces every common data-inspector interpretation of a byte window
+         */
+        nlohmann::json interpretBytes(std::span<const u8> data, std::endian endian) {
+            nlohmann::json result = nlohmann::json::object();
+            const size_t size = data.size();
+
+            const auto addInt = [&](const char *name, size_t bytes, bool isSigned) {
+                if (size < bytes) return;
+                if (isSigned)
+                    result[name] = readSignedInteger(data, bytes, endian);
+                else
+                    result[name] = readUnsignedInteger(data, bytes, endian);
+            };
+
+            addInt("u8", 1, false);   addInt("i8", 1, true);
+            addInt("u16", 2, false);  addInt("i16", 2, true);
+            addInt("u24", 3, false);  addInt("i24", 3, true);
+            addInt("u32", 4, false);  addInt("i32", 4, true);
+            addInt("u48", 6, false);  addInt("i48", 6, true);
+            addInt("u64", 8, false);  addInt("i64", 8, true);
+
+            if (size >= 4) result["f32"] = double(readScalar<float>(data, endian));
+            if (size >= 8) result["f64"] = readScalar<double>(data, endian);
+
+            if (size >= 1) {
+                result["bool"] = data[0] != 0;
+                const u8 c = data[0];
+                result["char"] = (c >= 0x20 && c <= 0x7E) ? std::string(1, char(c)) : fmt::format("\\x{:02X}", c);
+            }
+
+            // Unsigned LEB128
+            {
+                u64 value = 0;
+                size_t shift = 0, consumed = 0;
+                bool ok = false;
+                for (size_t i = 0; i < size && shift < 64; i++) {
+                    value |= u64(data[i] & 0x7F) << shift;
+                    consumed++;
+                    if ((data[i] & 0x80) == 0) { ok = true; break; }
+                    shift += 7;
+                }
+                if (ok) result["uleb128"] = { { "value", value }, { "byte_length", consumed } };
+            }
+
+            if (size >= 4)  result["time32"] = formatUnixTimestamp(i64(readScalar<u32>(data, endian)));
+            if (size >= 8)  result["time64"] = formatUnixTimestamp(readSignedInteger(data, 8, endian));
+
+            if (size >= 16) {
+                // RFC 4122 (big-endian) UUID and Microsoft mixed-endian GUID
+                const auto hex = [&](size_t off, size_t n) { return crypt::encode16({ data.begin() + off, data.begin() + off + n }); };
+                result["uuid"] = fmt::format("{}-{}-{}-{}-{}", hex(0,4), hex(4,2), hex(6,2), hex(8,2), hex(10,6));
+                result["guid"] = fmt::format("{:02X}{:02X}{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}-{}-{}",
+                                             data[3], data[2], data[1], data[0], data[5], data[4], data[7], data[6],
+                                             hex(8,2), hex(10,6));
+            }
+
+            return result;
         }
 
     }
@@ -916,6 +1104,190 @@ namespace hex::plugin::builtin {
                 };
                 return makeResult(result);
             });
+        });
+
+        // ====================================================================
+        // PHASE 1 — ImHex core analysis surface
+        // ====================================================================
+
+        ContentRegistry::MCP::registerTool(romfs::get("mcp/tools/identify_file.json").string(), [](const nlohmann::json &) -> nlohmann::json {
+            auto provider = getActiveProvider();
+
+            // Real libmagic identification (much stronger than the signature table)
+            auto description = magic::getDescription(provider);
+            auto mimeType    = magic::getMIMEType(provider);
+            auto extensions  = magic::getExtensions(provider);
+
+            std::vector<u8> header(std::min<u64>(provider->getActualSize(), 32));
+            if (!header.empty())
+                provider->read(0, header.data(), header.size());
+            const auto magicPreviewSize = std::min<size_t>(header.size(), 16);
+
+            nlohmann::json result = {
+                { "handle", provider->getID() },
+                { "description", description },
+                { "mime_type", mimeType },
+                { "extensions", extensions },
+                { "signature_match", detectFileType(provider, header) },
+                { "magic_bytes", crypt::encode16({ header.begin(), header.begin() + magicPreviewSize }) },
+                { "size", provider->getActualSize() }
+            };
+            return makeResult(result);
+        });
+
+        ContentRegistry::MCP::registerTool(romfs::get("mcp/tools/suggest_patterns.json").string(), [](const nlohmann::json &) -> nlohmann::json {
+            auto provider = getActiveProvider();
+
+            nlohmann::json patterns = nlohmann::json::array();
+            for (const auto &found : magic::findViablePatterns(provider)) {
+                nlohmann::json entry = {
+                    { "path", wolv::util::toUTF8String(found.patternFilePath) },
+                    { "author", found.author },
+                    { "description", found.description }
+                };
+                if (found.mimeType.has_value())   entry["mime_type"] = *found.mimeType;
+                if (found.magicOffset.has_value()) entry["magic_offset"] = *found.magicOffset;
+                patterns.push_back(entry);
+            }
+
+            nlohmann::json result = {
+                { "handle", provider->getID() },
+                { "patterns", patterns },
+                { "count", patterns.size() }
+            };
+            return makeResult(result);
+        });
+
+        ContentRegistry::MCP::registerTool(romfs::get("mcp/tools/run_pattern_file.json").string(), [](const nlohmann::json &data) -> nlohmann::json {
+            auto provider = getActiveProvider();
+
+            const bool hasSource = data.contains("source");
+            const bool hasPath   = data.contains("path");
+            if (hasSource == hasPath)
+                throw std::runtime_error("Provide exactly one of 'source' (inline pattern code) or 'path' (a .hexpat file path)");
+
+            std::string source;
+            std::string sourceName = "mcp";
+            if (hasSource) {
+                source = data.at("source").get<std::string>();
+            } else {
+                auto path = data.at("path").get<std::string>();
+                wolv::io::File file(std::fs::path(path), wolv::io::File::Mode::Read);
+                if (!file.isValid())
+                    throw std::runtime_error(fmt::format("Could not open pattern file '{}'", path));
+                source = file.readString();
+                sourceName = path;
+            }
+
+            std::map<std::string, pl::core::Token::Literal> inVariables;
+            if (data.contains("in_variables")) {
+                const auto &vars = data.at("in_variables");
+                if (!vars.is_object())
+                    throw std::runtime_error("'in_variables' must be an object");
+                for (const auto &[name, value] : vars.items())
+                    inVariables[name] = jsonToLiteral(value);
+            }
+
+            const bool includePatterns = data.value("include_patterns", true);
+
+            auto &runtime = ContentRegistry::PatternLanguage::getRuntime();
+            auto lock = std::scoped_lock(ContentRegistry::PatternLanguage::getRuntimeLock());
+
+            // Reset and bind the runtime to the current provider, then execute
+            ContentRegistry::PatternLanguage::configureRuntime(runtime, provider);
+
+            std::vector<std::string> consoleLines;
+            runtime.setLogCallback([&consoleLines](pl::core::LogConsole::Level level, const std::string &message) {
+                const char *prefix = "";
+                switch (level) {
+                    using enum pl::core::LogConsole::Level;
+                    case Debug:   prefix = "[D] "; break;
+                    case Info:    prefix = "[I] "; break;
+                    case Warning: prefix = "[W] "; break;
+                    case Error:   prefix = "[E] "; break;
+                    default: break;
+                }
+                consoleLines.push_back(prefix + message);
+            });
+
+            std::ignore = runtime.executeString(source, sourceName, {}, inVariables, true);
+
+            // Detach the callback so the runtime never references our local vector after this call
+            runtime.setLogCallback({});
+
+            const auto &compileErrors = runtime.getCompileErrors();
+            const auto &evalError     = runtime.getEvalError();
+            const bool success = compileErrors.empty() && !evalError.has_value();
+
+            nlohmann::json compileErrorsJson = nlohmann::json::array();
+            for (const auto &error : compileErrors)
+                compileErrorsJson.push_back(compileErrorToJson(error));
+
+            nlohmann::json evalErrorJson = nullptr;
+            if (evalError.has_value())
+                evalErrorJson = { { "message", evalError->message }, { "line", evalError->line }, { "column", evalError->column } };
+
+            nlohmann::json outVariables = nlohmann::json::object();
+            for (const auto &[name, value] : runtime.getOutVariables())
+                outVariables[name] = literalToJson(value);
+
+            nlohmann::json result = {
+                { "handle", provider->getID() },
+                { "success", success },
+                { "pattern_count", runtime.getCreatedPatternCount() },
+                { "compile_errors", compileErrorsJson },
+                { "eval_error", evalErrorJson },
+                { "out_variables", outVariables },
+                { "console", wolv::util::combineStrings(consoleLines, "\n") }
+            };
+
+            if (includePatterns && success) {
+                pl::gen::fmt::FormatterJson formatter;
+                auto formatted = formatter.format(runtime);
+                try {
+                    result["patterns"] = nlohmann::json::parse(std::string(formatted.begin(), formatted.end()));
+                } catch (const nlohmann::json::exception &) {
+                    result["patterns"] = nlohmann::json::array();
+                }
+            }
+
+            return makeResult(result);
+        });
+
+        ContentRegistry::MCP::registerTool(romfs::get("mcp/tools/inspect_data.json").string(), [](const nlohmann::json &data) -> nlohmann::json {
+            auto provider = getActiveProvider();
+
+            const auto address = data.at("address").get<u64>();
+            const auto endianStr = data.value("endian", "little");
+            if (endianStr != "little" && endianStr != "big")
+                throw std::runtime_error("'endian' must be 'little' or 'big'");
+            const auto endian = endianStr == "little" ? std::endian::little : std::endian::big;
+
+            const u64 available = clampRegion(provider, address, 16);
+            std::vector<u8> buffer(available);
+            provider->read(address, buffer.data(), buffer.size());
+
+            nlohmann::json interpretations = interpretBytes(buffer, endian);
+
+            // Optional filter to a subset of interpretation names
+            if (data.contains("types")) {
+                const auto wanted = data.at("types").get<std::vector<std::string>>();
+                nlohmann::json filtered = nlohmann::json::object();
+                for (const auto &name : wanted) {
+                    if (interpretations.contains(name))
+                        filtered[name] = interpretations[name];
+                }
+                interpretations = filtered;
+            }
+
+            nlohmann::json result = {
+                { "handle", provider->getID() },
+                { "address", address },
+                { "endian", endianStr },
+                { "bytes_read", available },
+                { "interpretations", interpretations }
+            };
+            return makeResult(result);
         });
     }
 

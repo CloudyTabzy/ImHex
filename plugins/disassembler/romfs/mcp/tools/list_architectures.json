@@ -1,0 +1,28 @@
+{
+    "name": "list_architectures",
+    "title": "List Disassembler Architectures",
+    "description": "Lists the CPU architectures the disassemble tool supports, with example architecture spec strings. Specs have the form 'arch[;option1,option2]'; suffix the architecture with 'be' or 'eb' for big-endian.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "architectures": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "spec": { "type": "string", "description": "Example architecture spec to pass to disassemble" },
+                        "description": { "type": "string" }
+                    }
+                }
+            },
+            "spec_format": { "type": "string" },
+            "capstone_version": { "type": "string" }
+        },
+        "required": ["architectures", "spec_format"]
+    }
+}

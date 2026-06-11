@@ -26,6 +26,7 @@ add_imhex_plugin(
         source/plugin_disassembler.cpp
 
         source/content/views/view_disassembler.cpp
+        source/content/mcp_tools.cpp
 
         source/content/pl_visualizers/disassembler.cpp
         source/content/pl_builtin_types.cpp

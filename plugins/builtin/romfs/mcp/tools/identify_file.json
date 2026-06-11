@@ -1,0 +1,29 @@
+{
+    "name": "identify_file",
+    "title": "Identify File Type",
+    "description": "Identifies the currently selected data source using ImHex's libmagic database (the same engine the GUI uses), returning a human-readable description, MIME type and likely file extensions. Falls back to a built-in signature table. Much stronger than detect_file_type; prefer this tool.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "handle": { "type": "number" },
+            "description": {
+                "type": "string",
+                "description": "libmagic human-readable description, or empty if the magic database is unavailable"
+            },
+            "mime_type": { "type": "string", "description": "libmagic MIME type" },
+            "extensions": { "type": "string", "description": "Likely file extensions, slash-separated" },
+            "signature_match": {
+                "type": "string",
+                "description": "Built-in signature-table match (offline fallback)"
+            },
+            "magic_bytes": { "type": "string", "description": "Uppercase hex of the first bytes" },
+            "size": { "type": "number" }
+        },
+        "required": ["handle", "description", "mime_type", "signature_match", "size"]
+    }
+}

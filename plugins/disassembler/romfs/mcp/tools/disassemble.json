@@ -1,0 +1,64 @@
+{
+    "name": "disassemble",
+    "title": "Disassemble Machine Code",
+    "description": "Disassembles a region of the currently selected data source using Capstone, supporting 20+ CPU architectures. Call list_architectures for the available architecture spec strings and options. Returns instructions with their virtual address, file offset, raw bytes, mnemonic and operands.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "architecture": {
+                "type": "string",
+                "description": "Architecture spec, e.g. 'x64', 'x86;32bit', 'arm;thumb', 'mipsbe;mips32r6', 'aarch64'. See list_architectures"
+            },
+            "address": {
+                "type": "number",
+                "default": 0,
+                "description": "File offset to start disassembling from"
+            },
+            "size": {
+                "type": "number",
+                "description": "Number of bytes to disassemble. Defaults to the rest of the data source (capped at 1MiB)"
+            },
+            "image_base": {
+                "type": "number",
+                "description": "Virtual address that the start address maps to (for correct branch targets). Defaults to 'address'"
+            },
+            "max_instructions": {
+                "type": "number",
+                "default": 256,
+                "description": "Maximum number of instructions to return (up to 10000)"
+            },
+            "syntax": {
+                "type": "string",
+                "enum": ["default", "intel", "att", "masm", "motorola"],
+                "description": "Assembly syntax flavor (architecture dependent)"
+            }
+        },
+        "required": ["architecture"]
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "handle": { "type": "number" },
+            "architecture": { "type": "string" },
+            "image_base": { "type": "number" },
+            "instructions": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "address": { "type": "number", "description": "Virtual address of the instruction" },
+                        "offset": { "type": "number", "description": "File offset of the instruction" },
+                        "size": { "type": "number" },
+                        "bytes": { "type": "string", "description": "Raw instruction bytes as hex" },
+                        "mnemonic": { "type": "string" },
+                        "operands": { "type": "string" }
+                    }
+                }
+            },
+            "count": { "type": "number" },
+            "bytes_consumed": { "type": "number" },
+            "truncated": { "type": "boolean", "description": "True if max_instructions was reached before the region ended" }
+        },
+        "required": ["handle", "architecture", "instructions", "count"]
+    }
+}
