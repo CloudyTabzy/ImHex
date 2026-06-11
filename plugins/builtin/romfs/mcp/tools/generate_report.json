@@ -1,0 +1,19 @@
+{
+    "name": "generate_report",
+    "title": "Generate Analysis Report",
+    "description": "Runs all registered Reports generators and aggregates their markdown output. Built-in reports cover the data description (Magic, MIME, etc.) and overlays; future plugins can register more. The result contains both the combined 'report' string and a per-section 'sections' array so the LLM can pick which sections to surface. Reports may touch overlays (main-thread state), so this tool runs on the main thread.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "section_count": { "type": "number", "description": "Number of non-empty report sections" },
+            "report":         { "type": "string", "description": "Combined markdown report (sections concatenated)" },
+            "sections":       { "type": "array", "items": { "type": "string" }, "description": "Per-section markdown, in registration order" }
+        },
+        "required": ["section_count", "report", "sections"]
+    }
+}

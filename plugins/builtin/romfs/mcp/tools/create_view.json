@@ -1,0 +1,35 @@
+{
+    "name": "create_view",
+    "title": "Create View",
+    "description": "Creates a ViewProvider over a sub-range of the currently selected data source. Views are read-only (ViewProvider::isWritable() returns false by design), so this is the safe way for an agent to inspect a region without ever mutating the source. The view is added to the provider list and becomes selectable via select_data_source. [M] mutates the provider list. If 'name' is empty, the view is named '<base> View' (matching the GUI behavior).",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "address": {
+                "type": "number",
+                "description": "Start address of the view (relative to the base provider)"
+            },
+            "size": {
+                "type": "number",
+                "description": "Size of the view in bytes"
+            },
+            "name": {
+                "type": "string",
+                "description": "Optional display name for the view (shown in select_data_source results)"
+            }
+        },
+        "required": ["address", "size"]
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "handle":      { "type": "number", "description": "Handle of the newly created view" },
+            "name":        { "type": "string" },
+            "address":     { "type": "number" },
+            "size":        { "type": "number" },
+            "base_handle": { "type": "number", "description": "Handle of the source provider the view is over" },
+            "read_only":   { "type": "boolean" }
+        },
+        "required": ["handle", "name", "address", "size", "base_handle", "read_only"]
+    }
+}

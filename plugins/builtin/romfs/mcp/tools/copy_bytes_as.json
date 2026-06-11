@@ -1,0 +1,35 @@
+{
+    "name": "copy_bytes_as",
+    "title": "Copy Bytes As",
+    "description": "Formats a region of the currently selected data source as a language array literal (C, C++, Java, C#, Rust, Python, JavaScript, Lua, Go, Crystal, Swift, Pascal, base64, hex view, or HTML). Uses ImHex's existing DataFormatter registry so the output matches what the GUI's 'Copy As' menu produces. Pure read.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "format": {
+                "type": "string",
+                "default": "c",
+                "description": "Output format. Short name ('c', 'cpp', 'rust', 'python', 'java', 'csharp', 'go', 'lua', 'js', 'swift', 'pascal', 'crystal', 'base64', 'hex_view', 'html') or the full unlocalized name."
+            },
+            "address": {
+                "type": "number",
+                "default": 0,
+                "description": "Address to start copying from"
+            },
+            "size": {
+                "type": "number",
+                "description": "Number of bytes to copy. Defaults to the rest of the data source"
+            }
+        },
+        "required": []
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "format":  { "type": "string", "description": "Full unlocalized format name" },
+            "address": { "type": "number" },
+            "size":    { "type": "number" },
+            "output":  { "type": "string", "description": "The formatted output, ready to paste into code" }
+        },
+        "required": ["format", "address", "size", "output"]
+    }
+}

@@ -1,0 +1,40 @@
+{
+    "name": "update_bookmark",
+    "title": "Update Bookmark",
+    "description": "Updates an existing bookmark's name, comment, and/or color. ImHex's bookmark API only supports add/remove, so this tool implements update as remove(old_id) + add(new_fields). The result includes both 'id' (the new bookmark id) and 'old_id' so the LLM can update its tracking. The address and size are NOT mutable in this version (use remove + add to relocate). [M] mutates the bookmark list.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "id": {
+                "type": "number",
+                "description": "ID of the bookmark to update"
+            },
+            "name": {
+                "type": "string",
+                "description": "New name. If omitted or empty, the name is preserved (use the existing name if you want to keep it; omitting sets it to empty)"
+            },
+            "comment": {
+                "type": "string",
+                "description": "New comment. Same semantics as 'name'"
+            },
+            "color": {
+                "type": "number",
+                "description": "New RGBA color, or 0xFFFFFFFF to keep the existing color"
+            }
+        },
+        "required": ["id"]
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "id":      { "type": "number", "description": "New bookmark id (the old id has been removed)" },
+            "old_id": { "type": "number", "description": "Original id (for tracking purposes)" },
+            "address": { "type": "number" },
+            "size":    { "type": "number" },
+            "name":    { "type": "string" },
+            "comment": { "type": "string" },
+            "color":   { "type": "number" }
+        },
+        "required": ["id", "old_id", "address", "size", "name", "comment", "color"]
+    }
+}

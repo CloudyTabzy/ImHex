@@ -1,0 +1,29 @@
+{
+    "name": "list_hash_algorithms",
+    "title": "List Hash Algorithms",
+    "description": "Enumerates the ContentRegistry::Hashes registry, returning every hash algorithm ImHex currently has loaded. Useful for discovering the full algorithm set (CRC32, MD5, SHA family, Blake2, XXHash, Murmur, Tiger, SipHash, Adler32, all CRC variants) before calling calculate_hash. Pure read, safe to call repeatedly.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "count": { "type": "number", "description": "Number of hash algorithms currently registered" },
+            "algorithms": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id":        { "type": "string", "description": "Short id the agent should pass to calculate_hash (last component of the unlocalized name)" },
+                        "name":      { "type": "string", "description": "Full unlocalized registry name, e.g. 'hex.hashes.hash.sha256'" },
+                        "functions": { "type": "array", "items": { "type": "string" }, "description": "Function names the hash exposes (primary + alternatives)" }
+                    },
+                    "required": ["id", "name", "functions"]
+                }
+            }
+        },
+        "required": ["count", "algorithms"]
+    }
+}

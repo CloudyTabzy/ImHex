@@ -1,0 +1,24 @@
+{
+    "name": "demangle_symbol",
+    "title": "Demangle Symbol",
+    "description": "Demangles a C++/Rust/D symbol using LLVM's demangler. Supports Itanium ABI (Linux/macOS), MSVC (Windows), Rust v0, and D. The result's `recognized` field tells you whether the symbol was successfully demangled; an unrecognized symbol is returned unchanged with `recognized=false` so the agent can still see the original input. Pure read.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "symbol": {
+                "type": "string",
+                "description": "Mangled symbol to demangle (e.g. '_ZN5ImHex6Server4initEv' or '?init@Server@ImHex@@QEAAXXZ')"
+            }
+        },
+        "required": ["symbol"]
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "symbol":     { "type": "string", "description": "Original input" },
+            "demangled":  { "type": "string", "description": "Demangled form (or original input if unrecognized)" },
+            "recognized": { "type": "boolean", "description": "True if demangling produced a different output" }
+        },
+        "required": ["symbol", "demangled", "recognized"]
+    }
+}

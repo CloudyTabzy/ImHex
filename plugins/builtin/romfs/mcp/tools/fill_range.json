@@ -1,0 +1,38 @@
+{
+    "name": "fill_range",
+    "title": "Fill Range",
+    "description": "Writes a repeated byte value or multi-byte pattern over [address, address+size) in the currently selected data source. The provider must be writable (in-memory providers, file providers that are not read-only). Streams in 1 MiB chunks to avoid huge allocations; the pattern is tiled across each chunk. [M] mutates the provider. This is a destructive operation; prefer fill_range to be gated by a confirmation step in the agent's workflow.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "address": {
+                "type": "number",
+                "description": "Start address of the range to fill"
+            },
+            "size": {
+                "type": "number",
+                "description": "Number of bytes to fill"
+            },
+            "value": {
+                "type": "number",
+                "description": "Single byte value to write (0..255). Use 'value' for a single-byte fill or 'pattern' for a multi-byte repeating pattern. If both are provided, 'pattern' wins."
+            },
+            "pattern": {
+                "type": "string",
+                "description": "Multi-byte pattern to repeat. Raw bytes; not parsed as hex. e.g. 'DEADBEEF' is the 8-byte pattern [0xDE, 0xAD, 0xBE, 0xEF, ...]. (Use 'value' for single-byte fills.)"
+            }
+        },
+        "required": ["address", "size"]
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "handle":      { "type": "number" },
+            "address":     { "type": "number" },
+            "size":        { "type": "number", "description": "Number of bytes written" },
+            "pattern":     { "type": "string", "description": "Raw pattern bytes as a string" },
+            "pattern_hex": { "type": "string", "description": "Hex of the pattern (for verification)" }
+        },
+        "required": ["handle", "address", "size", "pattern", "pattern_hex"]
+    }
+}

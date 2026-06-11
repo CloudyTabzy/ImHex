@@ -1,15 +1,14 @@
 {
     "name": "calculate_hash",
-    "title": "Calculate Hash",
-    "description": "Calculates a hash or checksum over a region of the currently selected data source. The data is read in a streaming fashion, so this also works for very large files.",
+    "title": "Calculate Hash (registry-backed)",
+    "description": "Calculates a hash or checksum over a region of the currently selected data source. Backed by ImHex's ContentRegistry::Hashes, exposing all 30+ registered algorithms (CRC32, MD5, SHA-1/224/256/384/512, Blake2, XXHash, Murmur, Adler32, all CRC variants, etc.). The data is read in a streaming fashion so this also works for very large files. Use list_hash_algorithms to discover the supported ids.",
     "inputSchema": {
         "type": "object",
         "properties": {
             "algorithm": {
                 "type": "string",
-                "enum": ["crc32", "md5", "sha1", "sha224", "sha256", "sha384", "sha512"],
                 "default": "sha256",
-                "description": "Hash algorithm to use"
+                "description": "Hash algorithm id (e.g. 'sha256', 'md5', 'blake2b 256', 'crc32'). Accepts the short form, the full unlocalized name from list_hash_algorithms, or the prior hard-coded values for back-compat."
             },
             "address": {
                 "type": "number",
@@ -26,26 +25,11 @@
     "outputSchema": {
         "type": "object",
         "properties": {
-            "handle": {
-                "type": "number",
-                "description": "Handle of the data source that was hashed"
-            },
-            "algorithm": {
-                "type": "string",
-                "description": "Hash algorithm that was used"
-            },
-            "hash": {
-                "type": "string",
-                "description": "Uppercase hex string of the hash value"
-            },
-            "address": {
-                "type": "number",
-                "description": "Address the hash was calculated from"
-            },
-            "size": {
-                "type": "number",
-                "description": "Number of bytes that were hashed"
-            }
+            "handle":    { "type": "number", "description": "Handle of the data source that was hashed" },
+            "algorithm": { "type": "string", "description": "Algorithm that was used (the unlocalized name)" },
+            "hash":      { "type": "string", "description": "Hex string of the hash value" },
+            "address":   { "type": "number", "description": "Address the hash was calculated from" },
+            "size":      { "type": "number", "description": "Number of bytes that were hashed" }
         },
         "required": ["handle", "algorithm", "hash", "address", "size"]
     }

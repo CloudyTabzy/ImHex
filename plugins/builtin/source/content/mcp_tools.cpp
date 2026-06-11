@@ -1,7 +1,11 @@
 #include <content/providers/file_provider.hpp>
 #include <content/providers/memory_file_provider.hpp>
+#include <content/providers/view_provider.hpp>
 #include <hex/api/content_registry/communication_interface.hpp>
+#include <hex/api/content_registry/data_formatter.hpp>
+#include <hex/api/content_registry/hashes.hpp>
 #include <hex/api/content_registry/pattern_language.hpp>
+#include <hex/api/content_registry/reports.hpp>
 #include <hex/api/content_registry/diffing.hpp>
 #include <hex/api/imhex_api/provider.hpp>
 #include <hex/api/imhex_api/bookmarks.hpp>
@@ -11,6 +15,7 @@
 #include <hex/helpers/magic.hpp>
 #include <hex/helpers/utils.hpp>
 #include <hex/providers/provider.hpp>
+#include <hex/trace/stacktrace.hpp>
 #include <romfs/romfs.hpp>
 #include <wolv/literals.hpp>
 #include <wolv/io/file.hpp>
@@ -1489,6 +1494,370 @@ namespace hex::plugin::builtin {
             result["truncated"] = truncatedA || truncatedB;
 
             return makeResult(result);
+        });
+
+        // -----------------------------------------------------------------
+        // Phase 3 tools (breadth & ergonomics + first 3 from Phase 4)
+        // -----------------------------------------------------------------
+
+        // 1) calculate_hash (extended) - registry-backed, 30+ algorithms
+        //    Replaces the prior hard-coded switch with a ContentRegistry::Hashes lookup.
+        //    The agent passes any of the algorithm ids from list_hash_algorithms.
+        //    The bridge proxy keeps the same name 'calculate_hash' for back-compat.
+        ContentRegistry::MCP::registerTool(romfs::get("mcp/tools/calculate_hash.json").string(), [](const nlohmann::json &data) -> nlohmann::json {
+            auto provider = getActiveProvider();
+
+            const auto requested = data.value("algorithm", "sha256");
+            // Normalize: lowercase, spaces to hyphens. "blake2b 256" -> "blake2b-256"
+            auto normalize = [](std::string s) {
+                for (char &c : s) if (c == ' ' || c == '\t') c = '-';
+                for (char &c : s) c = static_cast<char>(std::tolower(c));
+                return s;
+            };
+            const auto normalized = normalize(requested);
+
+            const auto address = data.value("address", u64(0));
+            u64 size = data.contains("size") ? data.at("size").get<u64>() : provider->getActualSize() - std::min(address, provider->getActualSize());
+            size = clampRegion(provider, address, size);
+
+            // Look up the hash in the ContentRegistry::Hashes registry. The LLM may pass
+            // any of: (a) the full unlocalized name ("hex.hashes.hash.sha256"),
+            // (b) the short form ("sha256"), (c) a normalized variant ("sha-256").
+            // We match (a) directly, then (b) by comparing the substring after the
+            // last '.' in the unlocalized name, then (c) by normalizing both.
+            ContentRegistry::Hashes::Hash *selected = nullptr;
+            std::string selectedName;
+            for (auto &hash : ContentRegistry::Hashes::impl::getHashes()) {
+                const auto unlocalized = std::string(hash->getUnlocalizedName().get());
+                if (normalize(unlocalized) == normalized) { selected = hash.get(); selectedName = unlocalized; break; }
+                const auto shortName = unlocalized.substr(unlocalized.rfind('.') + 1);
+                if (shortName == requested || normalize(shortName) == normalized) {
+                    selected = hash.get(); selectedName = unlocalized; break;
+                }
+            }
+            if (selected == nullptr) {
+                // Back-compat: if the hashes plugin is not loaded, the registry is
+                // empty and only the legacy hard-coded algorithms are reachable. Fall
+                // back to the crypt:: builtins. This keeps the old tool's behavior.
+                std::string hash;
+                const auto toHex = [](const auto &v) {
+                    return crypt::encode16({ v.begin(), v.end() });
+                };
+                if (requested == "crc32")
+                    hash = fmt::format("{:08X}", crypt::crc32(provider, address, size, 0x04C11DB7, 0xFFFFFFFF, 0xFFFFFFFF, true, true));
+                else if (requested == "md5")  hash = toHex(crypt::md5(provider, address, size));
+                else if (requested == "sha1") hash = toHex(crypt::sha1(provider, address, size));
+                else if (requested == "sha224") hash = toHex(crypt::sha224(provider, address, size));
+                else if (requested == "sha256") hash = toHex(crypt::sha256(provider, address, size));
+                else if (requested == "sha384") hash = toHex(crypt::sha384(provider, address, size));
+                else if (requested == "sha512") hash = toHex(crypt::sha512(provider, address, size));
+                else
+                    throw std::runtime_error(fmt::format("Unknown algorithm '{}'. Call list_hash_algorithms to see the supported ids.", requested));
+
+                nlohmann::json result = {
+                    { "handle",     provider->getID() },
+                    { "algorithm",  requested },
+                    { "hash",       hash },
+                    { "address",    address },
+                    { "size",       size }
+                };
+                return makeResult(result);
+            }
+
+            // Create the primary function: the unlocalized name (the hash plugin
+            // registers a Function per named output, e.g. "hex.hashes.hash.sha256"
+            // and "hex.hashes.hash.sha256.hex"). The primary function shares the
+            // hash's own unlocalized name.
+            auto function = selected->create(selectedName);
+            const auto bytes = function.get({ address, size }, provider);
+            const auto hex = crypt::encode16({ bytes.begin(), bytes.end() });
+
+            nlohmann::json result = {
+                { "handle",     provider->getID() },
+                { "algorithm",  selectedName },
+                { "hash",       hex },
+                { "address",    address },
+                { "size",       size }
+            };
+            return makeResult(result);
+        });
+
+        // 2) list_hash_algorithms - enumerate the Hashes registry. Pure read.
+        //    Each algorithm's friendly id is the last component of the unlocalized
+        //    name (e.g. "hex.hashes.hash.blake2b 256" -> "blake2b-256"). This is
+        //    what the LLM should pass to calculate_hash.
+        ContentRegistry::MCP::registerTool(romfs::get("mcp/tools/list_hash_algorithms.json").string(), [](const nlohmann::json &) -> nlohmann::json {
+            nlohmann::json algorithms = nlohmann::json::array();
+            for (const auto &hash : ContentRegistry::Hashes::impl::getHashes()) {
+                const auto unlocalized = std::string(hash->getUnlocalizedName().get());
+                const auto shortName = unlocalized.substr(unlocalized.rfind('.') + 1);
+
+                // Probe the hash to list the output functions it exposes. Some hashes
+                // define a single primary function, others define a primary plus
+                // alternatives (e.g. "sha256" and "sha256.hex").
+                nlohmann::json functions = nlohmann::json::array();
+                for (const auto &baseName : { unlocalized, shortName, std::string("default") }) {
+                    try {
+                        auto fn = hash->create(baseName);
+                        functions.push_back(fn.getName());
+                    } catch (...) {
+                        // Not all hashes expose a 'default' function; skip.
+                    }
+                }
+
+                algorithms.push_back({
+                    { "id",         shortName },
+                    { "name",       unlocalized },
+                    { "functions",  functions }
+                });
+            }
+
+            nlohmann::json result = {
+                { "count",       algorithms.size() },
+                { "algorithms",  algorithms }
+            };
+            return makeResult(result);
+        });
+
+        // 3) demangle_symbol - Itanium / MSVC / Rust / D via trace::demangle. Pure read.
+        ContentRegistry::MCP::registerTool(romfs::get("mcp/tools/demangle_symbol.json").string(), [](const nlohmann::json &data) -> nlohmann::json {
+            const auto mangled = data.at("symbol").get<std::string>();
+            if (mangled.empty())
+                throw std::runtime_error("symbol must not be empty");
+
+            const auto demangled = trace::demangle(mangled);
+            // trace::demangle returns the input unchanged when it fails, so an
+            // identity result is a reliable failure signal. We also try the
+            // underscore-prefix and the _Z-stripped variants it tries internally
+            // so the LLM gets a clean answer even on platform-prefixed symbols.
+            const bool changed = (demangled != mangled);
+            const auto demangledUnderscored = trace::demangle(std::string("_") + mangled);
+            const auto demangledZStripped = trace::demangle(std::string("_Z") + mangled);
+            const bool recognized = changed || (demangledUnderscored != std::string("_") + mangled) || (demangledZStripped != std::string("_Z") + mangled);
+
+            nlohmann::json result = {
+                { "symbol",          mangled },
+                { "demangled",       demangled },
+                { "recognized",      recognized }
+            };
+            return makeResult(result);
+        });
+
+        // 4) copy_bytes_as - format a region with one of the registered DataFormatter entries.
+        //    Pure read.
+        ContentRegistry::MCP::registerTool(romfs::get("mcp/tools/copy_bytes_as.json").string(), [](const nlohmann::json &data) -> nlohmann::json {
+            auto provider = getActiveProvider();
+
+            const auto format = data.value("format", "c");
+            const auto address = data.value("address", u64(0));
+            const auto size = clampRegion(provider, address, data.value("size", u64(0)));
+
+            // Build a friendly-name -> unlocalized-name table from the registry.
+            // The formatters are registered with unlocalized names like
+            // 'hex.builtin.view.hex_editor.copy.c'; we expose short names ('c',
+            // 'cpp', 'rust', 'python', etc.) and accept both.
+            const auto &entries = ContentRegistry::DataFormatter::impl::getExportMenuEntries();
+            const ContentRegistry::DataFormatter::impl::ExportMenuEntry *selected = nullptr;
+            std::string selectedUnlocalized;
+            for (const auto &entry : entries) {
+                const auto unlocalized = std::string(entry.unlocalizedName.get());
+                // Accept either the short form (e.g. "c") or the full unlocalized form
+                if (unlocalized == format) {
+                    selected = &entry;
+                    selectedUnlocalized = unlocalized;
+                    break;
+                }
+                const auto shortName = unlocalized.substr(unlocalized.rfind('.') + 1);
+                if (shortName == format) {
+                    selected = &entry;
+                    selectedUnlocalized = unlocalized;
+                    break;
+                }
+            }
+            if (selected == nullptr) {
+                // Build a helpful error listing all available short names.
+                std::string available;
+                for (const auto &entry : entries) {
+                    const auto unlocalized = std::string(entry.unlocalizedName.get());
+                    available += unlocalized.substr(unlocalized.rfind('.') + 1);
+                    available += ", ";
+                }
+                throw std::runtime_error(fmt::format(
+                    "Unknown format '{}'. Available formats: {}", format, available));
+            }
+
+            const auto output = selected->callback(provider, address, size, false);
+            nlohmann::json result = {
+                { "format",     selectedUnlocalized },
+                { "address",    address },
+                { "size",       size },
+                { "output",     output }
+            };
+            return makeResult(result);
+        });
+
+        // 5) generate_report - run all registered Reports generators and aggregate.
+        //    Reports may touch overlays (e.g. overlay list), which are main-thread state,
+        //    so this tool runs on the main thread.
+        ContentRegistry::MCP::registerTool(romfs::get("mcp/tools/generate_report.json").string(), [](const nlohmann::json &) -> nlohmann::json {
+            return runOnMainThread([] {
+                getActiveProvider();
+
+                nlohmann::json sections = nlohmann::json::array();
+                std::string combined;
+                for (const auto &generator : ContentRegistry::Reports::impl::getGenerators()) {
+                    const auto section = generator.callback(ImHexApi::Provider::get());
+                    if (section.empty())
+                        continue;
+                    sections.push_back(section);
+                    combined += section;
+                    combined += "\n\n";
+                }
+
+                nlohmann::json result = {
+                    { "section_count",  sections.size() },
+                    { "report",         combined },
+                    { "sections",       sections }
+                };
+                return makeResult(result);
+            });
+        });
+
+        // 6) update_bookmark - ImHexApi::Bookmarks has only add/remove/getEntries,
+        //    so 'update' is implemented as remove(old_id) + add(new fields). The new
+        //    bookmark gets a fresh id; we return both so the LLM can update its
+        //    bookmarks table. [M] (mutates bookmark list).
+        ContentRegistry::MCP::registerTool(romfs::get("mcp/tools/update_bookmark.json").string(), [](const nlohmann::json &data) -> nlohmann::json {
+            const auto id = data.at("id").get<u64>();
+            // Optional fields: any of name/comment/color may be omitted to leave unchanged.
+            // address and size are NOT mutable in v1 (would invalidate downstream annotations).
+            // To change range, the LLM should remove + add a new one.
+            const auto newName = data.value("name", std::string{});
+            const auto newComment = data.value("comment", std::string{});
+            const auto newColor = data.value("color", u32(0xFFFFFFFF));
+
+            return runOnMainThread([id, newName, newComment, newColor] {
+                getActiveProvider();
+
+                // Find the old bookmark so we can preserve its address and size.
+                auto entries = ImHexApi::Bookmarks::getEntries();
+                const auto it = std::ranges::find_if(entries, [id](const auto &e) { return e.id == id; });
+                if (it == entries.end())
+                    throw std::runtime_error(fmt::format("No bookmark with ID {} found in the current data source", id));
+
+                const auto address = it->region.getStartAddress();
+                const auto size = it->region.getSize();
+
+                ImHexApi::Bookmarks::remove(id);
+                const auto newId = ImHexApi::Bookmarks::add(address, size, newName, newComment, newColor);
+
+                nlohmann::json result = {
+                    { "id",          newId },
+                    { "old_id",      id },
+                    { "address",     address },
+                    { "size",        size },
+                    { "name",        newName },
+                    { "comment",     newComment },
+                    { "color",       newColor }
+                };
+                return makeResult(result);
+            });
+        });
+
+        // 7) fill_range - write a repeated byte value (or pattern) over [address, address+size).
+        //    [M] (mutates the provider). Streams in 1 MiB chunks to avoid huge allocs.
+        ContentRegistry::MCP::registerTool(romfs::get("mcp/tools/fill_range.json").string(), [](const nlohmann::json &data) -> nlohmann::json {
+            auto provider = getActiveProvider();
+            if (!provider->isWritable())
+                throw std::runtime_error("The current data source is read-only. Use open_memory or open_file with a writable provider.");
+
+            const auto address = data.at("address").get<u64>();
+            const auto size    = data.at("size").get<u64>();
+            if (size == 0)
+                throw std::runtime_error("size must be > 0");
+            const auto clampedSize = clampRegion(provider, address, size);
+
+            // 'value' may be a single byte (0..255) or a multi-byte pattern.
+            // We accept either an integer (single byte) or a string (raw bytes).
+            std::vector<u8> pattern;
+            if (data.contains("pattern")) {
+                const auto &raw = data.at("pattern").get<std::string>();
+                pattern.assign(raw.begin(), raw.end());
+            } else {
+                const auto v = data.value("value", u8(0));
+                pattern = { v };
+            }
+            if (pattern.empty())
+                throw std::runtime_error("fill pattern must not be empty");
+
+            return runOnMainThread([provider, address, clampedSize, pattern]() -> nlohmann::json {
+                // Tile the pattern into a chunk-sized buffer and write it
+                // repeatedly. We don't read-modify-write (preserves correct
+                // semantics if the user fills a range that overlaps itself).
+                constexpr size_t ChunkSize = 1_MiB;
+                std::vector<u8> chunk(ChunkSize);
+                for (size_t i = 0; i < chunk.size(); i += pattern.size()) {
+                    const auto remaining = std::min(pattern.size(), chunk.size() - i);
+                    std::memcpy(chunk.data() + i, pattern.data(), remaining);
+                }
+
+                u64 bytesWritten = 0;
+                for (u64 offset = 0; offset < clampedSize; offset += ChunkSize) {
+                    const auto toWrite = std::min<size_t>(ChunkSize, clampedSize - offset);
+                    provider->write(address + offset, chunk.data(), toWrite);
+                    bytesWritten += toWrite;
+                }
+
+                nlohmann::json result = {
+                    { "handle",       provider->getID() },
+                    { "address",      address },
+                    { "size",         bytesWritten },
+                    { "pattern_hex",  crypt::encode16({ pattern.begin(), pattern.end() }) }
+                };
+                return makeResult(result);
+            });
+        });
+
+        // 8) create_view - create a ViewProvider over a sub-range of the current provider.
+        //    The view is read-only (ViewProvider::isWritable() returns false by design),
+        //    so this is safe for an agent to use to inspect a region without mutating
+        //    the source. [M] (mutates the provider list).
+        ContentRegistry::MCP::registerTool(romfs::get("mcp/tools/create_view.json").string(), [](const nlohmann::json &data) -> nlohmann::json {
+            const auto address = data.at("address").get<u64>();
+            const auto size = data.at("size").get<u64>();
+            const auto name = data.value("name", std::string{});
+
+            return runOnMainThread([address, size, name]() -> nlohmann::json {
+                auto *baseProvider = getActiveProvider();
+                if (size == 0)
+                    throw std::runtime_error("size must be > 0");
+                const auto baseSize = baseProvider->getActualSize();
+                if (address >= baseSize)
+                    throw std::runtime_error(fmt::format("Address 0x{:X} is out of range, the data source is 0x{:X} bytes large", address, baseSize));
+                if (address + size > baseSize)
+                    throw std::runtime_error(fmt::format("Range [0x{:X}, 0x{:X}) is out of range, the data source is 0x{:X} bytes large", address, address + size, baseSize));
+
+                // ViewProvider is "hex.builtin.provider.view" per builtin code paths
+                // (e.g. view_bookmarks.cpp:402).
+                auto newProvider = ImHexApi::Provider::createProvider("hex.builtin.provider.view", true);
+                if (auto *view = dynamic_cast<ViewProvider*>(newProvider.get()); view != nullptr) {
+                    view->setProvider(address, size, baseProvider);
+                    if (!name.empty())
+                        view->setName(name);
+                    ImHexApi::Provider::openProvider(newProvider);
+
+                    nlohmann::json result = {
+                        { "handle",       newProvider->getID() },
+                        { "name",         view->getName() },
+                        { "address",      address },
+                        { "size",         size },
+                        { "base_handle",  baseProvider->getID() },
+                        { "read_only",    true }
+                    };
+                    return makeResult(result);
+                }
+                throw std::runtime_error("Failed to create ViewProvider (createProvider returned a non-View type)");
+            });
         });
     }
 
