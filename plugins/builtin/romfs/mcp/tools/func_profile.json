@@ -1,0 +1,23 @@
+{
+    "name": "func_profile",
+    "description": "Analyze a code region and return heuristic disassembly statistics: estimated instruction count, basic blocks, calls, jumps, returns, and potential function entry points. For precise disassembly, use the 'disassemble' tool.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "address": {
+                "type": "integer",
+                "description": "Start address of the code region"
+            },
+            "size": {
+                "type": "integer",
+                "description": "Size of the region in bytes"
+            },
+            "architecture": {
+                "type": "string",
+                "description": "Architecture hint (x64, x86, arm, etc.)",
+                "default": "x64"
+            }
+        },
+        "required": ["address", "size"]
+    }
+}

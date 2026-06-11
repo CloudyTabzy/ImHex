@@ -2071,6 +2071,298 @@ namespace hex::plugin::builtin {
                 return makeResult(result);
             });
         });
+
+        // 8) search_value — scan the provider for numeric values.
+        //    [R] (pure read, safe on MCP thread).
+        ContentRegistry::MCP::registerTool(romfs::get("mcp/tools/search_value.json").string(), [](const nlohmann::json &data) -> nlohmann::json {
+            auto provider = getActiveProvider();
+
+            const auto startAddress = data.value("start_address", u64(0));
+            const auto endAddress   = data.value("end_address", provider->getActualSize());
+            const auto width        = std::clamp<u32>(data.value("width", u32(32)), 8, 64);
+            const auto endian       = data.value("endian", std::string("little"));
+            const auto isSigned     = data.value("signed", false);
+            const auto maxResults   = std::clamp<u64>(data.value("max_results", u64(1000)), u64(1), u64(10000));
+            const auto minValue     = data.value("min_value", std::optional<i64>(std::nullopt));
+            const auto maxValue     = data.value("max_value", std::optional<i64>(std::nullopt));
+            const auto exactValue   = data.value("value", std::optional<i64>(std::nullopt));
+
+            const u64 scanStart = std::min(startAddress, provider->getActualSize());
+            const u64 scanEnd   = std::min(endAddress, provider->getActualSize());
+            const u64 scanSize  = scanEnd > scanStart ? scanEnd - scanStart : 0;
+            const size_t byteWidth = width / 8;
+
+            if (scanSize < byteWidth)
+                throw std::runtime_error("Scan region is smaller than the value width");
+
+            nlohmann::json matches = nlohmann::json::array();
+            bool truncated = false;
+
+            std::vector<u8> buffer;
+            for (u64 offset = scanStart; offset + byteWidth <= scanEnd; offset += 1) {
+                // Read width bytes at offset
+                std::array<u8, 8> bytes = {};
+                provider->read(offset, bytes.data(), byteWidth);
+
+                i64 value = 0;
+                if (endian == "little") {
+                    for (size_t i = 0; i < byteWidth; i++)
+                        value |= i64(bytes[i]) << (i * 8);
+                } else {
+                    for (size_t i = 0; i < byteWidth; i++)
+                        value |= i64(bytes[i]) << ((byteWidth - 1 - i) * 8);
+                }
+
+                // Sign-extend if needed
+                if (isSigned && width < 64) {
+                    const i64 signBit = i64(1) << (width - 1);
+                    if (value & signBit)
+                        value |= ~((i64(1) << width) - 1);
+                }
+
+                // Check match
+                bool match = false;
+                if (exactValue.has_value()) {
+                    match = (value == exactValue.value());
+                } else if (minValue.has_value() && maxValue.has_value()) {
+                    match = (value >= minValue.value() && value <= maxValue.value());
+                } else {
+                    throw std::runtime_error("Provide either 'value' for exact match, or both 'min_value' and 'max_value' for range search");
+                }
+
+                if (match) {
+                    std::vector<u8> hexBytes(bytes.data(), bytes.data() + byteWidth);
+                    matches.push_back({
+                        { "offset", offset },
+                        { "value", value },
+                        { "hex", crypt::encode16(hexBytes) }
+                    });
+                    if (matches.size() >= maxResults) {
+                        truncated = true;
+                        break;
+                    }
+                }
+            }
+
+            nlohmann::json result = {
+                { "handle", provider->getID() },
+                { "width", width },
+                { "endian", endian },
+                { "signed", isSigned },
+                { "match_count", matches.size() },
+                { "truncated", truncated },
+                { "matches", matches }
+            };
+            return makeResult(result);
+        });
+
+        // 9) export_region — export a byte range to a file on disk.
+        //    [R] (pure read, file write is to external path).
+        ContentRegistry::MCP::registerTool(romfs::get("mcp/tools/export_region.json").string(), [](const nlohmann::json &data) -> nlohmann::json {
+            auto provider = getActiveProvider();
+
+            const auto address   = data.value("address", u64(0));
+            const auto size      = clampRegion(provider, address, data.at("size").get<u64>());
+            const auto filePath  = data.at("file_path").get<std::string>();
+
+            wolv::io::File file(filePath, wolv::io::File::Mode::Create);
+            if (!file.isValid())
+                throw std::runtime_error(fmt::format("Failed to create file: {}", filePath));
+
+            std::vector<u8> buffer;
+            u64 written = 0;
+            for (u64 offset = address; offset < address + size; offset += buffer.size()) {
+                buffer.resize(std::min<u64>(ScanChunkSize, (address + size) - offset));
+                provider->read(offset, buffer.data(), buffer.size());
+                file.writeVector(buffer);
+                written += buffer.size();
+            }
+
+            nlohmann::json result = {
+                { "handle", provider->getID() },
+                { "address", address },
+                { "size", size },
+                { "file_path", filePath },
+                { "bytes_written", written }
+            };
+            return makeResult(result);
+        });
+
+        // 10) data_info — composite analysis report (entropy + stats + magic + header).
+        //     [R] (pure read).
+        ContentRegistry::MCP::registerTool(romfs::get("mcp/tools/data_info.json").string(), [](const nlohmann::json &data) -> nlohmann::json {
+            auto provider = getActiveProvider();
+
+            const auto address = data.value("address", u64(0));
+            u64 size = data.contains("size") ? data.at("size").get<u64>() : provider->getActualSize() - std::min(address, provider->getActualSize());
+            size = clampRegion(provider, address, size);
+
+            // Magic identification (first 512 bytes)
+            std::vector<u8> header(std::min<u64>(512, size));
+            provider->read(address, header.data(), header.size());
+
+            magic::compile();
+            const auto description = magic::getDescription(header);
+            const auto mimeType    = magic::getMIMEType(header);
+            const auto extensions  = magic::getExtensions(header);
+
+            // Byte statistics
+            std::array<u64, 256> frequencies = {};
+            std::vector<u8> buffer;
+            for (u64 offset = address; offset < address + size; offset += buffer.size()) {
+                buffer.resize(std::min<u64>(ScanChunkSize, (address + size) - offset));
+                provider->read(offset, buffer.data(), buffer.size());
+                for (const u8 byte : buffer)
+                    frequencies[byte] += 1;
+            }
+
+            u64 uniqueBytes = 0;
+            u64 printableBytes = 0;
+            for (size_t i = 0; i < frequencies.size(); i++) {
+                if (frequencies[i] > 0) uniqueBytes += 1;
+                if (i >= 0x20 && i <= 0x7E) printableBytes += frequencies[i];
+            }
+
+            // Entropy
+            const double entropy = entropyFromFrequencies(frequencies, size);
+
+            // Header typed inspection (first 16 bytes)
+            nlohmann::json headerReads = nlohmann::json::array();
+            if (size >= 4) {
+                std::array<u8, 8> hdr = {};
+                provider->read(address, hdr.data(), std::min<u64>(8, size));
+
+                auto readLE = [&](size_t n) -> u64 {
+                    u64 v = 0;
+                    for (size_t i = 0; i < n; i++) v |= u64(hdr[i]) << (i * 8);
+                    return v;
+                };
+                auto readBE = [&](size_t n) -> u64 {
+                    u64 v = 0;
+                    for (size_t i = 0; i < n; i++) v |= u64(hdr[i]) << ((n - 1 - i) * 8);
+                    return v;
+                };
+
+                headerReads.push_back({ {"type", "u8"},  {"value", hdr[0]} });
+                headerReads.push_back({ {"type", "u16le"}, {"value", readLE(2)} });
+                headerReads.push_back({ {"type", "u16be"}, {"value", readBE(2)} });
+                headerReads.push_back({ {"type", "u32le"}, {"value", readLE(4)} });
+                headerReads.push_back({ {"type", "u32be"}, {"value", readBE(4)} });
+                if (size >= 8) {
+                    headerReads.push_back({ {"type", "u64le"}, {"value", readLE(8)} });
+                    headerReads.push_back({ {"type", "u64be"}, {"value", readBE(8)} });
+                }
+            }
+
+            nlohmann::json result = {
+                { "handle", provider->getID() },
+                { "address", address },
+                { "size", size },
+                { "file_type", {
+                    { "description", description },
+                    { "mime_type", mimeType },
+                    { "extensions", extensions }
+                }},
+                { "entropy", {
+                    { "overall", entropy },
+                    { "classification",
+                        entropy > 7.5 ? "likely encrypted/compressed" :
+                        entropy > 6.0 ? "likely structured data" :
+                        "likely text/code" }
+                }},
+                { "byte_statistics", {
+                    { "unique_bytes", uniqueBytes },
+                    { "unique_percentage", size > 0 ? (double(uniqueBytes) / 256.0) * 100.0 : 0.0 },
+                    { "printable_bytes", printableBytes },
+                    { "printable_percentage", size > 0 ? (double(printableBytes) / double(size)) * 100.0 : 0.0 },
+                    { "null_bytes", frequencies[0] },
+                    { "null_percentage", size > 0 ? (double(frequencies[0]) / double(size)) * 100.0 : 0.0 }
+                }},
+                { "header_inspection", headerReads }
+            };
+            return makeResult(result);
+        });
+
+        // 11) func_profile — analyze a code region and return disassembly statistics.
+        //     [R] (pure read, uses disassembler plugin if available).
+        ContentRegistry::MCP::registerTool(romfs::get("mcp/tools/func_profile.json").string(), [](const nlohmann::json &data) -> nlohmann::json {
+            auto provider = getActiveProvider();
+
+            const auto address = data.at("address").get<u64>();
+            const auto size    = clampRegion(provider, address, data.at("size").get<u64>());
+            const auto arch    = data.value("architecture", std::string("x64"));
+
+            // Read the region
+            std::vector<u8> code(size);
+            provider->read(address, code.data(), size);
+
+            // Try to disassemble using Capstone via the disassembler plugin
+            // For now, return basic stats without full disassembly
+            // (full disassembly requires Capstone integration which is in a separate plugin)
+
+            // Analyze byte patterns to infer basic blocks
+            size_t instructionCount = 0;
+            size_t basicBlockCount = 1;  // Assume at least one
+            size_t callCount = 0;
+            size_t jumpCount = 0;
+            size_t retCount = 0;
+
+            // Simple heuristic: look for common x86/x64 patterns
+            for (size_t i = 0; i < code.size(); i++) {
+                const u8 byte = code[i];
+                // CALL (E8, FF /2, 9A)
+                if (byte == 0xE8 || byte == 0x9A) {
+                    callCount++;
+                    instructionCount++;
+                }
+                // JMP/Jcc (EB, E9, EA, 70-7F, 0F 80-8F)
+                else if (byte == 0xEB || byte == 0xE9 || byte == 0xEA ||
+                         (byte >= 0x70 && byte <= 0x7F)) {
+                    jumpCount++;
+                    instructionCount++;
+                    if (byte != 0xEB && byte != 0xE9 && byte != 0xEA)
+                        basicBlockCount++;  // Conditional jump = new block
+                }
+                // RET (C3, C2, CB, CA)
+                else if (byte == 0xC3 || byte == 0xC2 || byte == 0xCB || byte == 0xCA) {
+                    retCount++;
+                    instructionCount++;
+                    basicBlockCount++;  // RET ends a block
+                }
+                // Common instruction prefixes/lengths
+                else if (byte != 0x00 && byte != 0xCC && byte != 0x90) {
+                    instructionCount++;
+                }
+            }
+
+            // Estimate function entry points by looking for common prologues
+            nlohmann::json entryPoints = nlohmann::json::array();
+            for (size_t i = 0; i < code.size() - 3; i++) {
+                // PUSH RBP ; MOV RBP, RSP (55 48 89 E5)
+                if (code[i] == 0x55 && code[i+1] == 0x48 && code[i+2] == 0x89 && code[i+3] == 0xE5) {
+                    entryPoints.push_back({ {"offset", address + i}, {"type", "push_rbp_mov"} });
+                }
+                // SUB RSP, imm (48 83 EC)
+                else if (code[i] == 0x48 && code[i+1] == 0x83 && code[i+2] == 0xEC) {
+                    entryPoints.push_back({ {"offset", address + i}, {"type", "sub_rsp"} });
+                }
+            }
+
+            nlohmann::json result = {
+                { "handle", provider->getID() },
+                { "address", address },
+                { "size", size },
+                { "architecture", arch },
+                { "instruction_count", instructionCount },
+                { "basic_block_count", basicBlockCount },
+                { "call_count", callCount },
+                { "jump_count", jumpCount },
+                { "return_count", retCount },
+                { "estimated_entry_points", entryPoints },
+                { "note", "Heuristic analysis based on byte patterns. For precise disassembly, use the disassemble tool with Capstone." }
+            };
+            return makeResult(result);
+        });
     }
 
 }

@@ -1,0 +1,23 @@
+{
+    "name": "export_region",
+    "description": "Export a byte range from the current data source to a file on disk.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "address": {
+                "type": "integer",
+                "description": "Start address of the region to export",
+                "default": 0
+            },
+            "size": {
+                "type": "integer",
+                "description": "Number of bytes to export"
+            },
+            "file_path": {
+                "type": "string",
+                "description": "Destination file path on disk"
+            }
+        },
+        "required": ["size", "file_path"]
+    }
+}
