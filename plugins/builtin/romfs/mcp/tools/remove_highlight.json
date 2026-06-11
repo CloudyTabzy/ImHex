@@ -1,0 +1,23 @@
+{
+    "name": "remove_highlight",
+    "title": "Remove Highlight",
+    "description": "Remove a previously added highlight from the hex editor by its unique ID.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "id": {
+                "type": "number",
+                "description": "Unique ID of the highlight to remove"
+            }
+        },
+        "required": ["id"]
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "id": { "type": "number" },
+            "removed": { "type": "boolean" }
+        },
+        "required": ["id", "removed"]
+    }
+}

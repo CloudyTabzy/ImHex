@@ -9,6 +9,7 @@
 #include <hex/api/content_registry/diffing.hpp>
 #include <hex/api/imhex_api/provider.hpp>
 #include <hex/api/imhex_api/bookmarks.hpp>
+#include <hex/api/imhex_api/hex_editor.hpp>
 #include <hex/api/task_manager.hpp>
 #include <hex/helpers/crypto.hpp>
 #include <hex/helpers/fmt.hpp>
@@ -1857,6 +1858,217 @@ namespace hex::plugin::builtin {
                     return makeResult(result);
                 }
                 throw std::runtime_error("Failed to create ViewProvider (createProvider returned a non-View type)");
+            });
+        });
+
+        // ====================================================================
+        // PHASE 4A — Hex Editor Highlighting & Selection
+        // ====================================================================
+
+        // 1) add_highlight — color-code a region in the hex editor.
+        //    [M] (mutates hex editor state).
+        ContentRegistry::MCP::registerTool(romfs::get("mcp/tools/add_highlight.json").string(), [](const nlohmann::json &data) -> nlohmann::json {
+            const auto address = data.at("address").get<u64>();
+            const auto size    = data.at("size").get<u64>();
+            const auto color   = data.value("color", u32(0xFF0000FF));
+            const auto type    = data.value("type", std::string("background"));
+
+            if (size == 0)
+                throw std::runtime_error("size must be > 0");
+
+            return runOnMainThread([address, size, color, type]() -> nlohmann::json {
+                auto *provider = getActiveProvider();
+                const auto providerSize = provider->getActualSize();
+                if (address >= providerSize)
+                    throw std::runtime_error(fmt::format("Address 0x{:X} is out of range, the data source is 0x{:X} bytes large", address, providerSize));
+                if (address + size > providerSize)
+                    throw std::runtime_error(fmt::format("Range [0x{:X}, 0x{:X}) is out of range, the data source is 0x{:X} bytes large", address, address + size, providerSize));
+
+                const Region region { address, size };
+                u32 id = 0;
+                if (type == "background")
+                    id = ImHexApi::HexEditor::addBackgroundHighlight(region, color);
+                else if (type == "foreground")
+                    id = ImHexApi::HexEditor::addForegroundHighlight(region, color);
+                else
+                    throw std::runtime_error(fmt::format("Unknown highlight type '{}'. Supported types are 'background' and 'foreground'", type));
+
+                nlohmann::json result = {
+                    { "id",      id },
+                    { "address", address },
+                    { "size",    size },
+                    { "color",   color },
+                    { "type",    type }
+                };
+                return makeResult(result);
+            });
+        });
+
+        // 2) remove_highlight — remove a highlight by its unique ID.
+        //    [M] (mutates hex editor state).
+        ContentRegistry::MCP::registerTool(romfs::get("mcp/tools/remove_highlight.json").string(), [](const nlohmann::json &data) -> nlohmann::json {
+            const auto id = data.at("id").get<u32>();
+
+            return runOnMainThread([id]() -> nlohmann::json {
+                getActiveProvider();
+
+                // Try background first, then foreground. One of them will succeed.
+                const auto &bg = ImHexApi::HexEditor::impl::getBackgroundHighlights();
+                const auto &fg = ImHexApi::HexEditor::impl::getForegroundHighlights();
+                const bool inBg = bg.contains(id);
+                const bool inFg = fg.contains(id);
+
+                if (!inBg && !inFg)
+                    throw std::runtime_error(fmt::format("No highlight with ID {} found", id));
+
+                if (inBg)
+                    ImHexApi::HexEditor::removeBackgroundHighlight(id);
+                if (inFg)
+                    ImHexApi::HexEditor::removeForegroundHighlight(id);
+
+                nlohmann::json result = {
+                    { "id",      id },
+                    { "removed", true }
+                };
+                return makeResult(result);
+            });
+        });
+
+        // 3) list_highlights — enumerate all active highlights.
+        //    Pure read.
+        ContentRegistry::MCP::registerTool(romfs::get("mcp/tools/list_highlights.json").string(), [](const nlohmann::json &) -> nlohmann::json {
+            return runOnMainThread([]() -> nlohmann::json {
+                auto provider = getActiveProvider();
+
+                nlohmann::json highlights = nlohmann::json::array();
+                for (const auto &[id, hl] : ImHexApi::HexEditor::impl::getBackgroundHighlights()) {
+                    highlights.push_back({
+                        { "id",      id },
+                        { "address", hl.getRegion().address },
+                        { "size",    hl.getRegion().size },
+                        { "color",   hl.getColor() },
+                        { "type",    "background" }
+                    });
+                }
+                for (const auto &[id, hl] : ImHexApi::HexEditor::impl::getForegroundHighlights()) {
+                    highlights.push_back({
+                        { "id",      id },
+                        { "address", hl.getRegion().address },
+                        { "size",    hl.getRegion().size },
+                        { "color",   hl.getColor() },
+                        { "type",    "foreground" }
+                    });
+                }
+
+                nlohmann::json result = {
+                    { "handle",     provider->getID() },
+                    { "highlights", highlights },
+                    { "count",      highlights.size() }
+                };
+                return makeResult(result);
+            });
+        });
+
+        // 4) set_selection — set the hex editor's current selection.
+        //    [M] (mutates hex editor state).
+        ContentRegistry::MCP::registerTool(romfs::get("mcp/tools/set_selection.json").string(), [](const nlohmann::json &data) -> nlohmann::json {
+            const auto address = data.at("address").get<u64>();
+            const auto size    = data.at("size").get<u64>();
+
+            if (size == 0)
+                throw std::runtime_error("size must be > 0");
+
+            return runOnMainThread([address, size]() -> nlohmann::json {
+                auto *provider = getActiveProvider();
+                const auto providerSize = provider->getActualSize();
+                if (address >= providerSize)
+                    throw std::runtime_error(fmt::format("Address 0x{:X} is out of range, the data source is 0x{:X} bytes large", address, providerSize));
+                if (address + size > providerSize)
+                    throw std::runtime_error(fmt::format("Range [0x{:X}, 0x{:X}) is out of range, the data source is 0x{:X} bytes large", address, address + size, providerSize));
+
+                ImHexApi::HexEditor::setSelection(address, size, provider);
+
+                nlohmann::json result = {
+                    { "address", address },
+                    { "size",    size }
+                };
+                return makeResult(result);
+            });
+        });
+
+        // 5) get_selection — read the hex editor's current selection.
+        //    Pure read.
+        ContentRegistry::MCP::registerTool(romfs::get("mcp/tools/get_selection.json").string(), [](const nlohmann::json &) -> nlohmann::json {
+            return runOnMainThread([]() -> nlohmann::json {
+                getActiveProvider();
+
+                const auto selection = ImHexApi::HexEditor::getSelection();
+                nlohmann::json result = {
+                    { "valid", selection.has_value() }
+                };
+                if (selection.has_value()) {
+                    result["address"] = selection->getRegion().address;
+                    result["size"]    = selection->getRegion().size;
+                } else {
+                    result["address"] = nullptr;
+                    result["size"]    = nullptr;
+                }
+                return makeResult(result);
+            });
+        });
+
+        // 6) add_tooltip — add a hover tooltip to a region.
+        //    [M] (mutates hex editor state).
+        ContentRegistry::MCP::registerTool(romfs::get("mcp/tools/add_tooltip.json").string(), [](const nlohmann::json &data) -> nlohmann::json {
+            const auto address = data.at("address").get<u64>();
+            const auto size    = data.at("size").get<u64>();
+            const auto text    = data.at("text").get<std::string>();
+            const auto color   = data.value("color", u32(0xFFFFFFFF));
+
+            if (size == 0)
+                throw std::runtime_error("size must be > 0");
+
+            return runOnMainThread([address, size, text, color]() -> nlohmann::json {
+                auto *provider = getActiveProvider();
+                const auto providerSize = provider->getActualSize();
+                if (address >= providerSize)
+                    throw std::runtime_error(fmt::format("Address 0x{:X} is out of range, the data source is 0x{:X} bytes large", address, providerSize));
+                if (address + size > providerSize)
+                    throw std::runtime_error(fmt::format("Range [0x{:X}, 0x{:X}) is out of range, the data source is 0x{:X} bytes large", address, address + size, providerSize));
+
+                const Region region { address, size };
+                const auto id = ImHexApi::HexEditor::addTooltip(region, text, color);
+
+                nlohmann::json result = {
+                    { "id",      id },
+                    { "address", address },
+                    { "size",    size },
+                    { "text",    text },
+                    { "color",   color }
+                };
+                return makeResult(result);
+            });
+        });
+
+        // 7) remove_tooltip — remove a tooltip by its unique ID.
+        //    [M] (mutates hex editor state).
+        ContentRegistry::MCP::registerTool(romfs::get("mcp/tools/remove_tooltip.json").string(), [](const nlohmann::json &data) -> nlohmann::json {
+            const auto id = data.at("id").get<u32>();
+
+            return runOnMainThread([id]() -> nlohmann::json {
+                getActiveProvider();
+
+                const auto &tips = ImHexApi::HexEditor::impl::getTooltips();
+                if (!tips.contains(id))
+                    throw std::runtime_error(fmt::format("No tooltip with ID {} found", id));
+
+                ImHexApi::HexEditor::removeTooltip(id);
+
+                nlohmann::json result = {
+                    { "id",      id },
+                    { "removed", true }
+                };
+                return makeResult(result);
             });
         });
     }

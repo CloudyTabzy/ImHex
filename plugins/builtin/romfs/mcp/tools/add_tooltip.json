@@ -1,0 +1,38 @@
+{
+    "name": "add_tooltip",
+    "title": "Add Tooltip",
+    "description": "Add a hover tooltip annotation to a region in the hex editor. Tooltips are visible in the ImHex GUI when the user hovers over the annotated bytes, useful for marking decoded values or notes.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "address": {
+                "type": "number",
+                "description": "Start address of the region"
+            },
+            "size": {
+                "type": "number",
+                "description": "Size of the region in bytes"
+            },
+            "text": {
+                "type": "string",
+                "description": "Tooltip text to display on hover"
+            },
+            "color": {
+                "type": "number",
+                "description": "RGBA color of the tooltip. Defaults to white (0xFFFFFFFF)."
+            }
+        },
+        "required": ["address", "size", "text"]
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "id": { "type": "number" },
+            "address": { "type": "number" },
+            "size": { "type": "number" },
+            "text": { "type": "string" },
+            "color": { "type": "number" }
+        },
+        "required": ["id", "address", "size", "text", "color"]
+    }
+}

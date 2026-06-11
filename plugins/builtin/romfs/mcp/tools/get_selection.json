@@ -1,0 +1,19 @@
+{
+    "name": "get_selection",
+    "title": "Get Selection",
+    "description": "Get the current selection in the hex editor. Returns the selected region's address and size, or indicates if no selection is active.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "valid": { "type": "boolean" },
+            "address": { "type": "number" },
+            "size": { "type": "number" }
+        },
+        "required": ["valid"]
+    }
+}

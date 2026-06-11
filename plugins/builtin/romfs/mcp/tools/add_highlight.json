@@ -1,0 +1,42 @@
+{
+    "name": "add_highlight",
+    "title": "Add Highlight",
+    "description": "Add a background or foreground color highlight to a region in the hex editor. Highlights are visible in the ImHex GUI and help agents visually mark interesting regions for human review or for tracking across sessions.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "address": {
+                "type": "number",
+                "description": "Start address of the region to highlight"
+            },
+            "size": {
+                "type": "number",
+                "description": "Size of the region in bytes"
+            },
+            "color": {
+                "type": "number",
+                "description": "RGBA color value (e.g., 0xFF0000FF for red, 0x00FF00FF for green, 0x0000FFFF for blue, 0xFFFF00FF for yellow). Defaults to red."
+            },
+            "type": {
+                "type": "string",
+                "enum": ["background", "foreground"],
+                "description": "Whether to highlight the background or foreground of bytes. Defaults to 'background'."
+            }
+        },
+        "required": ["address", "size"]
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "id": {
+                "type": "number",
+                "description": "Unique ID of the created highlight"
+            },
+            "address": { "type": "number" },
+            "size": { "type": "number" },
+            "color": { "type": "number" },
+            "type": { "type": "string" }
+        },
+        "required": ["id", "address", "size", "color", "type"]
+    }
+}

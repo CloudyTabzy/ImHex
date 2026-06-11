@@ -1,0 +1,22 @@
+{
+    "name": "list_highlights",
+    "title": "List Highlights",
+    "description": "List all active highlights in the hex editor for the current data source. Returns background and foreground highlights with their IDs, addresses, sizes, and colors.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "handle": { "type": "number" },
+            "highlights": {
+                "type": "array",
+                "description": "List of highlight entries"
+            },
+            "count": { "type": "number" }
+        },
+        "required": ["handle", "highlights", "count"]
+    }
+}

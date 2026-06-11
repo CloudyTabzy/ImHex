@@ -1,0 +1,23 @@
+{
+    "name": "remove_tooltip",
+    "title": "Remove Tooltip",
+    "description": "Remove a previously added tooltip annotation from the hex editor by its unique ID.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "id": {
+                "type": "number",
+                "description": "Unique ID of the tooltip to remove"
+            }
+        },
+        "required": ["id"]
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "id": { "type": "number" },
+            "removed": { "type": "boolean" }
+        },
+        "required": ["id", "removed"]
+    }
+}

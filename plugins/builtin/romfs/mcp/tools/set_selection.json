@@ -1,0 +1,27 @@
+{
+    "name": "set_selection",
+    "title": "Set Selection",
+    "description": "Set the current selection in the hex editor to a specific region. This focuses the user's attention on the selected bytes in the ImHex GUI.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "address": {
+                "type": "number",
+                "description": "Start address of the selection"
+            },
+            "size": {
+                "type": "number",
+                "description": "Size of the selection in bytes"
+            }
+        },
+        "required": ["address", "size"]
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "address": { "type": "number" },
+            "size": { "type": "number" }
+        },
+        "required": ["address", "size"]
+    }
+}
